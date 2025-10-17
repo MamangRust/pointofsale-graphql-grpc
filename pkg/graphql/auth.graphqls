@@ -1,0 +1,59 @@
+input RegisterInput {
+  firstname: String!
+  lastname: String!
+  email: String!
+  password: String!
+  confirm_password: String!
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+input RefreshTokenInput {
+  refresh_token: String!
+}
+
+input GetMeInput {
+  access_token: String!
+}
+
+type TokenResponse {
+  access_token: String!
+  refresh_token: String!
+}
+
+type ApiResponseLogin {
+  status: String!
+  message: String!
+  data: TokenResponse
+}
+
+type ApiResponseRefreshToken {
+  status: String!
+  message: String!
+  data: TokenResponse
+}
+
+type ApiResponseRegister {
+  status: String!
+  message: String!
+  data: UserResponse
+}
+
+type ApiResponseGetMe {
+  status: String!
+  message: String!
+  data: UserResponse
+}
+
+type Mutation {
+  registerUser(input: RegisterInput!): ApiResponseRegister!
+  loginUser(input: LoginInput!): ApiResponseLogin!
+  refreshToken(input: RefreshTokenInput!): ApiResponseRefreshToken!
+}
+
+type Query {
+  getMe: ApiResponseGetMe!
+}
