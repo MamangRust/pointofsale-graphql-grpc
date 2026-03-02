@@ -8,139 +8,199 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/model"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
-	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/user_errors"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // CreateUser is the resolver for the createUser field.
 func (r *mutationResolver) CreateUser(ctx context.Context, input model.CreateUserInput) (*model.APIResponseUserResponse, error) {
-	req := &pb.CreateUserRequest{
-		Firstname:       input.Firstname,
-		Lastname:        input.Lastname,
-		Email:           input.Email,
-		Password:        input.Password,
-		ConfirmPassword: input.ConfirmPassword,
-	}
+	return ResolverHandle(r.ResolverHandle, "CreateUser", ctx, func(ctx context.Context) (*model.APIResponseUserResponse, error) {
+		req := &requests.CreateUserRequest{
+			FirstName:       input.Firstname,
+			LastName:        input.Lastname,
+			Email:           input.Email,
+			Password:        input.Password,
+			ConfirmPassword: input.ConfirmPassword,
+		}
 
-	user, errResp := r.UserGraphql.UserClient.Create(ctx, req)
-	if errResp != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
-	}
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	so := r.UserGraphql.Mapping.ToGraphqlResponseUser(user)
+		reqPb := &pb.CreateUserRequest{
+			Firstname:       req.FirstName,
+			Lastname:        req.LastName,
+			Email:           req.Email,
+			Password:        req.Password,
+			ConfirmPassword: req.ConfirmPassword,
+		}
 
-	return so, nil
+		user, err := r.UserGraphql.UserClient.Create(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "CreateUser")
+		}
+
+		so := r.UserGraphql.Mapping.ToGraphqlResponseUser(user)
+		return so, nil
+	})
 }
 
 // UpdateUser is the resolver for the updateUser field.
 func (r *mutationResolver) UpdateUser(ctx context.Context, input model.UpdateUserInput) (*model.APIResponseUserResponse, error) {
-	id := int32(input.ID)
-	if id == 0 {
-		return nil, fmt.Errorf("invalid user ID")
-	}
+	return ResolverHandle(r.ResolverHandle, "UpdateUser", ctx, func(ctx context.Context) (*model.APIResponseUserResponse, error) {
+		id := int(input.ID)
+		if id == 0 {
+			return nil, errors.NewBadRequestError("invalid user ID")
+		}
 
-	req := &pb.UpdateUserRequest{
-		Id:              id,
-		Firstname:       *input.Firstname,
-		Lastname:        *input.Lastname,
-		Email:           *input.Email,
-		Password:        *input.Password,
-		ConfirmPassword: *input.ConfirmPassword,
-	}
+		req := &requests.UpdateUserRequest{
+			UserID:          &id,
+			FirstName:       *input.Firstname,
+			LastName:        *input.Lastname,
+			Email:           *input.Email,
+			Password:        *input.Password,
+			ConfirmPassword: *input.ConfirmPassword,
+		}
 
-	user, errResp := r.UserGraphql.UserClient.Update(ctx, req)
-	if errResp != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
-	}
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	so := r.UserGraphql.Mapping.ToGraphqlResponseUser(user)
+		reqPb := &pb.UpdateUserRequest{
+			Id:              int32(*req.UserID),
+			Firstname:       req.FirstName,
+			Lastname:        req.LastName,
+			Email:           req.Email,
+			Password:        req.Password,
+			ConfirmPassword: req.ConfirmPassword,
+		}
 
-	return so, nil
+		user, err := r.UserGraphql.UserClient.Update(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "UpdateUser")
+		}
+
+		so := r.UserGraphql.Mapping.ToGraphqlResponseUser(user)
+
+		r.UserGraphql.Cache.DeleteUserCache(ctx, id)
+
+		return so, nil
+	})
 }
 
 // TrashedUser is the resolver for the trashedUser field.
 func (r *mutationResolver) TrashedUser(ctx context.Context, input model.FindByIDUserInput) (*model.APIResponseUserResponseDeleteAt, error) {
-	id := int32(input.ID)
-	if id == 0 {
-		return nil, user_errors.ErrGraphqlUserInvalidId
-	}
+	return ResolverHandle(r.ResolverHandle, "TrashedUser", ctx, func(ctx context.Context) (*model.APIResponseUserResponseDeleteAt, error) {
+		id := int32(input.ID)
+		if id == 0 {
+			return nil, errors.NewBadRequestError("invalid user ID")
+		}
 
-	user, errResp := r.UserGraphql.UserClient.TrashedUser(ctx, &pb.FindByIdUserRequest{Id: id})
-	if errResp != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
-	}
+		user, err := r.UserGraphql.UserClient.TrashedUser(ctx, &pb.FindByIdUserRequest{Id: id})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "TrashedUser")
+		}
 
-	so := r.UserGraphql.Mapping.ToGraphqlResponseUserDeleteAt(user)
+		so := r.UserGraphql.Mapping.ToGraphqlResponseUserDeleteAt(user)
 
-	return so, nil
+		r.UserGraphql.Cache.DeleteUserCache(ctx, int(id))
+
+		return so, nil
+	})
 }
 
 // RestoreUser is the resolver for the restoreUser field.
 func (r *mutationResolver) RestoreUser(ctx context.Context, input model.FindByIDUserInput) (*model.APIResponseUserResponseDeleteAt, error) {
-	id := int32(input.ID)
-	if id == 0 {
-		return nil, user_errors.ErrGraphqlUserInvalidId
-	}
+	return ResolverHandle(r.ResolverHandle, "RestoreUser", ctx, func(ctx context.Context) (*model.APIResponseUserResponseDeleteAt, error) {
+		id := int32(input.ID)
+		if id == 0 {
+			return nil, errors.NewBadRequestError("invalid user ID")
+		}
 
-	user, errResp := r.UserGraphql.UserClient.RestoreUser(ctx, &pb.FindByIdUserRequest{Id: id})
-	if errResp != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
-	}
+		user, err := r.UserGraphql.UserClient.RestoreUser(ctx, &pb.FindByIdUserRequest{Id: id})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreUser")
+		}
 
-	so := r.UserGraphql.Mapping.ToGraphqlResponseUserDeleteAt(user)
+		so := r.UserGraphql.Mapping.ToGraphqlResponseUserDeleteAt(user)
 
-	return so, nil
+		r.UserGraphql.Cache.DeleteUserCache(ctx, int(id))
+
+		return so, nil
+	})
 }
 
 // DeleteUserPermanent is the resolver for the deleteUserPermanent field.
 func (r *mutationResolver) DeleteUserPermanent(ctx context.Context, input model.FindByIDUserInput) (*model.APIResponseUserDelete, error) {
-	id := int32(input.ID)
-	if id == 0 {
-		return nil, user_errors.ErrGraphqlUserInvalidId
-	}
+	return ResolverHandle(r.ResolverHandle, "DeleteUserPermanent", ctx, func(ctx context.Context) (*model.APIResponseUserDelete, error) {
+		id := int32(input.ID)
+		if id == 0 {
+			return nil, errors.NewBadRequestError("invalid user ID")
+		}
 
-	res, errResp := r.UserGraphql.UserClient.DeleteUserPermanent(ctx, &pb.FindByIdUserRequest{Id: id})
-	if errResp != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
-	}
+		res, err := r.UserGraphql.UserClient.DeleteUserPermanent(ctx, &pb.FindByIdUserRequest{Id: id})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteUserPermanent")
+		}
 
-	so := r.UserGraphql.Mapping.ToGraphqlResponseUserDelete(res)
+		so := r.UserGraphql.Mapping.ToGraphqlResponseUserDelete(res)
 
-	return so, nil
+		r.UserGraphql.Cache.DeleteUserCache(ctx, int(id))
+
+		return so, nil
+	})
 }
 
 // RestoreAllUser is the resolver for the restoreAllUser field.
 func (r *mutationResolver) RestoreAllUser(ctx context.Context) (*model.APIResponseUserAll, error) {
-	res, errResp := r.UserGraphql.UserClient.RestoreAllUser(ctx, &emptypb.Empty{})
-	if errResp != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
-	}
+	return ResolverHandle(r.ResolverHandle, "RestoreAllUser", ctx, func(ctx context.Context) (*model.APIResponseUserAll, error) {
+		res, err := r.UserGraphql.UserClient.RestoreAllUser(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreAllUser")
+		}
 
-	so := r.UserGraphql.Mapping.ToGraphqlResponseUserAll(res)
-
-	return so, nil
+		so := r.UserGraphql.Mapping.ToGraphqlResponseUserAll(res)
+		return so, nil
+	})
 }
 
 // DeleteAllUserPermanent is the resolver for the deleteAllUserPermanent field.
 func (r *mutationResolver) DeleteAllUserPermanent(ctx context.Context) (*model.APIResponseUserAll, error) {
-	res, errResp := r.UserGraphql.UserClient.RestoreAllUser(ctx, &emptypb.Empty{})
-	if errResp != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
-	}
+	return ResolverHandle(r.ResolverHandle, "DeleteAllUserPermanent", ctx, func(ctx context.Context) (*model.APIResponseUserAll, error) {
+		res, err := r.UserGraphql.UserClient.DeleteAllUserPermanent(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteAllUserPermanent")
+		}
 
-	so := r.UserGraphql.Mapping.ToGraphqlResponseUserAll(res)
-
-	return so, nil
+		so := r.UserGraphql.Mapping.ToGraphqlResponseUserAll(res)
+		return so, nil
+	})
 }
 
 // FindAllUsers is the resolver for the findAllUsers field.
 func (r *queryResolver) FindAllUsers(ctx context.Context, input *model.FindAllUserInput) (*model.APIResponsePaginationUser, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	// Normalize input for consistent caching and backend request
+	page := int32(1)
+	pageSize := int32(10)
+	search := ""
+
+	if input != nil {
+		if input.Page != nil {
+			page = int32(*input.Page)
+		}
+		if input.PageSize != nil {
+			pageSize = int32(*input.PageSize)
+		}
+		if input.Search != nil {
+			search = *input.Search
+		}
+	}
 
 	if page <= 0 {
 		page = 1
@@ -149,10 +209,22 @@ func (r *queryResolver) FindAllUsers(ctx context.Context, input *model.FindAllUs
 		pageSize = 10
 	}
 
+	// Use a normalized struct for the cache key
+	normalizedInput := &model.FindAllUserInput{
+		Page:     &page,
+		PageSize: &pageSize,
+		Search:   &search,
+	}
+
+	cachedData, found := r.UserGraphql.Cache.GetCachedUsersCache(ctx, normalizedInput)
+	if found {
+		return cachedData, nil
+	}
+
 	reqService := &pb.FindAllUserRequest{
 		Page:     page,
 		PageSize: pageSize,
-		Search:   *search,
+		Search:   search,
 	}
 
 	users, errResp := r.UserGraphql.UserClient.FindAll(ctx, reqService)
@@ -162,18 +234,25 @@ func (r *queryResolver) FindAllUsers(ctx context.Context, input *model.FindAllUs
 
 	so := r.UserGraphql.Mapping.ToGraphqlResponsePaginationUser(users)
 
+	r.UserGraphql.Cache.SetCachedUsersCache(ctx, normalizedInput, so)
+
 	return so, nil
 }
 
 // FindByIDUser is the resolver for the findByIdUser field.
 func (r *queryResolver) FindByIDUser(ctx context.Context, input model.FindByIDUserInput) (*model.APIResponseUserResponse, error) {
-	id := int32(input.ID)
+	id := int(input.ID)
 	if id == 0 {
 		return nil, fmt.Errorf("invalid user ID")
 	}
 
+	cachedData, found := r.UserGraphql.Cache.GetCachedUserCache(ctx, id)
+	if found {
+		return cachedData, nil
+	}
+
 	user, errResp := r.UserGraphql.UserClient.FindById(ctx, &pb.FindByIdUserRequest{
-		Id: id,
+		Id: int32(id),
 	})
 	if errResp != nil {
 		return nil, response.ToGraphqlErrorFromErrorResponse(errResp)
@@ -181,14 +260,29 @@ func (r *queryResolver) FindByIDUser(ctx context.Context, input model.FindByIDUs
 
 	so := r.UserGraphql.Mapping.ToGraphqlResponseUser(user)
 
+	r.UserGraphql.Cache.SetCachedUserCache(ctx, so)
+
 	return so, nil
 }
 
 // FindByActiveUsers is the resolver for the findByActiveUsers field.
 func (r *queryResolver) FindByActiveUsers(ctx context.Context, input *model.FindAllUserInput) (*model.APIResponsePaginationUserDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	// Normalize input for consistent caching and backend request
+	page := int32(1)
+	pageSize := int32(10)
+	search := ""
+
+	if input != nil {
+		if input.Page != nil {
+			page = int32(*input.Page)
+		}
+		if input.PageSize != nil {
+			pageSize = int32(*input.PageSize)
+		}
+		if input.Search != nil {
+			search = *input.Search
+		}
+	}
 
 	if page <= 0 {
 		page = 1
@@ -197,10 +291,22 @@ func (r *queryResolver) FindByActiveUsers(ctx context.Context, input *model.Find
 		pageSize = 10
 	}
 
+	// Use a normalized struct for the cache key
+	normalizedInput := &model.FindAllUserInput{
+		Page:     &page,
+		PageSize: &pageSize,
+		Search:   &search,
+	}
+
+	cachedData, found := r.UserGraphql.Cache.GetCachedUserActiveCache(ctx, normalizedInput)
+	if found {
+		return cachedData, nil
+	}
+
 	reqService := &pb.FindAllUserRequest{
 		Page:     page,
 		PageSize: pageSize,
-		Search:   *search,
+		Search:   search,
 	}
 
 	users, errResp := r.UserGraphql.UserClient.FindByActive(ctx, reqService)
@@ -210,14 +316,29 @@ func (r *queryResolver) FindByActiveUsers(ctx context.Context, input *model.Find
 
 	so := r.UserGraphql.Mapping.ToGraphqlResponsePaginationUserDeleteAt(users)
 
+	r.UserGraphql.Cache.SetCachedUserActiveCache(ctx, normalizedInput, so)
+
 	return so, nil
 }
 
 // FindByTrashedUsers is the resolver for the findByTrashedUsers field.
 func (r *queryResolver) FindByTrashedUsers(ctx context.Context, input *model.FindAllUserInput) (*model.APIResponsePaginationUserDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	// Normalize input for consistent caching and backend request
+	page := int32(1)
+	pageSize := int32(10)
+	search := ""
+
+	if input != nil {
+		if input.Page != nil {
+			page = int32(*input.Page)
+		}
+		if input.PageSize != nil {
+			pageSize = int32(*input.PageSize)
+		}
+		if input.Search != nil {
+			search = *input.Search
+		}
+	}
 
 	if page <= 0 {
 		page = 1
@@ -226,10 +347,22 @@ func (r *queryResolver) FindByTrashedUsers(ctx context.Context, input *model.Fin
 		pageSize = 10
 	}
 
+	// Use a normalized struct for the cache key
+	normalizedInput := &model.FindAllUserInput{
+		Page:     &page,
+		PageSize: &pageSize,
+		Search:   &search,
+	}
+
+	cachedData, found := r.UserGraphql.Cache.GetCachedUserTrashedCache(ctx, normalizedInput)
+	if found {
+		return cachedData, nil
+	}
+
 	reqService := &pb.FindAllUserRequest{
 		Page:     page,
 		PageSize: pageSize,
-		Search:   *search,
+		Search:   search,
 	}
 
 	users, errResp := r.UserGraphql.UserClient.FindByTrashed(ctx, reqService)
@@ -238,6 +371,8 @@ func (r *queryResolver) FindByTrashedUsers(ctx context.Context, input *model.Fin
 	}
 
 	so := r.UserGraphql.Mapping.ToGraphqlResponsePaginationUserDeleteAt(users)
+
+	r.UserGraphql.Cache.SetCachedUserTrashedCache(ctx, normalizedInput, so)
 
 	return so, nil
 }

@@ -6,7 +6,6 @@ import (
 
 	db "github.com/MamangRust/pointofsale-graphql-grpc/pkg/database/schema"
 	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/logger"
-
 	"go.uber.org/zap"
 	"golang.org/x/exp/rand"
 )

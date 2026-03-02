@@ -1,11 +1,22 @@
 package service
 
 import (
-	response_service "github.com/MamangRust/pointofsale-graphql-grpc/internal/mapper/response/service"
+	"github.com/MamangRust/pointofsale-graphql-grpc/internal/cache"
+	auth_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/auth"
+	cashier_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/cashier"
+	category_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/category"
+	merchant_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/merchant"
+	order_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/order"
+	orderitem_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/order_item"
+	product_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/product"
+	role_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/role"
+	transaction_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/transaction"
+	user_cache "github.com/MamangRust/pointofsale-graphql-grpc/internal/cache/user"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/repository"
 	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/auth"
 	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/hash"
 	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/logger"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/observability"
 )
 
 type Service struct {
@@ -26,20 +37,109 @@ type Deps struct {
 	Token        auth.TokenManager
 	Hash         hash.HashPassword
 	Logger       logger.LoggerInterface
-	Mapper       response_service.ResponseServiceMapper
+	Cache        *cache.CacheStore
 }
 
 func NewService(deps Deps) *Service {
+	observability, _ := observability.NewObservability("grpc-server", deps.Logger)
+
+	auth_cache := auth_cache.NewMencache(deps.Cache)
+	role_cache := role_cache.NewRoleMencache(deps.Cache)
+	user_cache := user_cache.NewUserMencache(deps.Cache)
+	category_cache := category_cache.NewCategoryMencache(deps.Cache)
+	cashier_cache := cashier_cache.NewCashierMencache(deps.Cache)
+	merchant_cache := merchant_cache.NewMerchantMencache(deps.Cache)
+	order_cache := order_cache.NewOrderMencache(deps.Cache)
+	order_item_cache := orderitem_cache.NewOrderItemCache(deps.Cache)
+	product_cache := product_cache.NewProductMencache(deps.Cache)
+	transaction_cache := transaction_cache.NewTransactionMencache(deps.Cache)
+
 	return &Service{
-		Auth:        NewAuthService(deps.Repositories.User, deps.Repositories.RefreshToken, deps.Repositories.Role, deps.Repositories.UserRole, deps.Hash, deps.Token, deps.Logger, deps.Mapper.UserResponseMapper),
-		User:        NewUserService(deps.Repositories.User, deps.Logger, deps.Mapper.UserResponseMapper, deps.Hash),
-		Role:        NewRoleService(deps.Repositories.Role, deps.Logger, deps.Mapper.RoleResponseMapper),
-		Cashier:     NewCashierService(deps.Repositories.Merchant, deps.Repositories.User, deps.Repositories.Cashier, deps.Logger, deps.Mapper.CashierResponseMapper),
-		Category:    NewCategoryService(deps.Repositories.Category, deps.Logger, deps.Mapper.CategoryResponseMapper),
-		Merchant:    NewMerchantService(deps.Repositories.Merchant, deps.Logger, deps.Mapper.MerchantResponseMapper),
-		OrderItem:   NewOrderItemService(deps.Repositories.OrderItem, deps.Logger, deps.Mapper.OrderItemResponseMapper),
-		Order:       NewOrderServiceMapper(deps.Repositories.Order, deps.Repositories.OrderItem, deps.Repositories.Cashier, deps.Repositories.Merchant, deps.Repositories.Product, deps.Logger, deps.Mapper.OrderResponseMapper),
-		Product:     NewProductService(deps.Repositories.Category, deps.Repositories.Merchant, deps.Repositories.Product, deps.Logger, deps.Mapper.ProductResponseMapper),
-		Transaction: NewTransactionService(deps.Repositories.Cashier, deps.Repositories.Merchant, deps.Repositories.Transaction, deps.Repositories.Order, deps.Repositories.OrderItem, deps.Logger, deps.Mapper.TransactionResponseMapper),
+		Auth: NewAuthService(AuthServiceDeps{
+			UserRepo:         deps.Repositories.User,
+			RefreshTokenRepo: deps.Repositories.RefreshToken,
+			RoleRepo:         deps.Repositories.Role,
+			UserRoleRepo:     deps.Repositories.UserRole,
+			Hash:             deps.Hash,
+			TokenManager:     deps.Token,
+			Logger:           deps.Logger,
+			Observability:    observability,
+			Cache:            auth_cache,
+		}),
+
+		User: NewUserService(UserServiceDeps{
+			UserRepo:      deps.Repositories.User,
+			Hash:          deps.Hash,
+			Logger:        deps.Logger,
+			Observability: observability,
+			Cache:         user_cache,
+		}),
+
+		Role: NewRoleService(RoleServiceDeps{
+			RoleRepo:      deps.Repositories.Role,
+			Logger:        deps.Logger,
+			Observability: observability,
+			Cache:         role_cache,
+		}),
+
+		Cashier: NewCashierService(CashierServiceDeps{
+			MerchantRepo:  deps.Repositories.Merchant,
+			UserRepo:      deps.Repositories.User,
+			CashierRepo:   deps.Repositories.Cashier,
+			Logger:        deps.Logger,
+			Observability: observability,
+			Cache:         cashier_cache,
+		}),
+		Category: NewCategoryService(CategoryServiceDeps{
+			CategoryRepo:  deps.Repositories.Category,
+			Logger:        deps.Logger,
+			Observability: observability,
+			cache:         category_cache,
+		}),
+
+		Merchant: NewMerchantService(MerchantServiceDeps{
+			MerchantRepo:  deps.Repositories.Merchant,
+			Logger:        deps.Logger,
+			Observability: observability,
+			Cache:         merchant_cache,
+		}),
+
+		OrderItem: NewOrderItemService(OrderItemServiceDeps{
+			OrderItemRepo: deps.Repositories.OrderItem,
+			Logger:        deps.Logger,
+			Observability: observability,
+			Cache:         order_item_cache,
+		}),
+
+		Order: NewOrderService(OrderServiceDeps{
+			OrderRepo:     deps.Repositories.Order,
+			OrderItemRepo: deps.Repositories.OrderItem,
+			ProductRepo:   deps.Repositories.Product,
+			CashierRepo:   deps.Repositories.Cashier,
+			MerchantRepo:  deps.Repositories.Merchant,
+			Logger:        deps.Logger,
+			Observability: observability,
+			Cache:         order_cache,
+		}),
+
+		Product: NewProductService(ProductServiceDeps{
+			CategoryRepo:  deps.Repositories.Category,
+			MerchantRepo:  deps.Repositories.Merchant,
+			ProductRepo:   deps.Repositories.Product,
+			Logger:        deps.Logger,
+			Observability: observability,
+			cache:         product_cache,
+		}),
+
+		Transaction: NewTransactionService(TransactionServiceDeps{
+			CashierRepo:     deps.Repositories.Cashier,
+			MerchantRepo:    deps.Repositories.Merchant,
+			TransactionRepo: deps.Repositories.Transaction,
+			OrderRepo:       deps.Repositories.Order,
+			OrderItemRepo:   deps.Repositories.OrderItem,
+			Logger:          deps.Logger,
+			Observability:   observability,
+			Cache:           transaction_cache,
+		}),
 	}
 }

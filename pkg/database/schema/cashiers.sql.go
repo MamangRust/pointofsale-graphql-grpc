@@ -7,8 +7,9 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createCashier = `-- name: CreateCashier :one
@@ -16,13 +17,27 @@ INSERT INTO
     cashiers (merchant_id, user_id, name)
 VALUES ($1, $2, $3)
 RETURNING
-    cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at
 `
 
 type CreateCashierParams struct {
 	MerchantID int32  `json:"merchant_id"`
 	UserID     int32  `json:"user_id"`
 	Name       string `json:"name"`
+}
+
+type CreateCashierRow struct {
+	CashierID  int32            `json:"cashier_id"`
+	MerchantID int32            `json:"merchant_id"`
+	UserID     int32            `json:"user_id"`
+	Name       string           `json:"name"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
 }
 
 // CreateCashier: Creates a new cashier record
@@ -37,9 +52,9 @@ type CreateCashierParams struct {
 // Business Logic:
 //   - Sets created_at timestamp automatically
 //   - Requires all mandatory fields
-func (q *Queries) CreateCashier(ctx context.Context, arg CreateCashierParams) (*Cashier, error) {
-	row := q.db.QueryRowContext(ctx, createCashier, arg.MerchantID, arg.UserID, arg.Name)
-	var i Cashier
+func (q *Queries) CreateCashier(ctx context.Context, arg CreateCashierParams) (*CreateCashierRow, error) {
+	row := q.db.QueryRow(ctx, createCashier, arg.MerchantID, arg.UserID, arg.Name)
+	var i CreateCashierRow
 	err := row.Scan(
 		&i.CashierID,
 		&i.MerchantID,
@@ -47,7 +62,6 @@ func (q *Queries) CreateCashier(ctx context.Context, arg CreateCashierParams) (*
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return &i, err
 }
@@ -63,7 +77,7 @@ DELETE FROM cashiers WHERE deleted_at IS NOT NULL
 //   - Only affects already soft-deleted records
 //   - Typically used during database maintenance
 func (q *Queries) DeleteAllPermanentCashiers(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteAllPermanentCashiers)
+	_, err := q.db.Exec(ctx, deleteAllPermanentCashiers)
 	return err
 }
 
@@ -85,17 +99,32 @@ WHERE
 //   - No return value (exec-only)
 //   - Use with caution - irreversible operation
 func (q *Queries) DeleteCashierPermanently(ctx context.Context, cashierID int32) error {
-	_, err := q.db.ExecContext(ctx, deleteCashierPermanently, cashierID)
+	_, err := q.db.Exec(ctx, deleteCashierPermanently, cashierID)
 	return err
 }
 
 const getCashierById = `-- name: GetCashierById :one
-SELECT cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at
 FROM cashiers
 WHERE
     cashier_id = $1
     AND deleted_at IS NULL
 `
+
+type GetCashierByIdRow struct {
+	CashierID  int32            `json:"cashier_id"`
+	MerchantID int32            `json:"merchant_id"`
+	UserID     int32            `json:"user_id"`
+	Name       string           `json:"name"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+}
 
 // GetCashierByID: Retrieves active cashier by ID
 // Purpose: Fetch cashier details for display/editing
@@ -107,9 +136,9 @@ WHERE
 // Business Logic:
 //   - Excludes soft-deleted records
 //   - Returns single record or nothing
-func (q *Queries) GetCashierById(ctx context.Context, cashierID int32) (*Cashier, error) {
-	row := q.db.QueryRowContext(ctx, getCashierById, cashierID)
-	var i Cashier
+func (q *Queries) GetCashierById(ctx context.Context, cashierID int32) (*GetCashierByIdRow, error) {
+	row := q.db.QueryRow(ctx, getCashierById, cashierID)
+	var i GetCashierByIdRow
 	err := row.Scan(
 		&i.CashierID,
 		&i.MerchantID,
@@ -117,13 +146,19 @@ func (q *Queries) GetCashierById(ctx context.Context, cashierID int32) (*Cashier
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return &i, err
 }
 
 const getCashiers = `-- name: GetCashiers :many
-SELECT cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     deleted_at IS NULL
@@ -145,21 +180,20 @@ type GetCashiersParams struct {
 }
 
 type GetCashiersRow struct {
-	CashierID  int32        `json:"cashier_id"`
-	MerchantID int32        `json:"merchant_id"`
-	UserID     int32        `json:"user_id"`
-	Name       string       `json:"name"`
-	CreatedAt  sql.NullTime `json:"created_at"`
-	UpdatedAt  sql.NullTime `json:"updated_at"`
-	DeletedAt  sql.NullTime `json:"deleted_at"`
-	TotalCount int64        `json:"total_count"`
+	CashierID  int32            `json:"cashier_id"`
+	MerchantID int32            `json:"merchant_id"`
+	UserID     int32            `json:"user_id"`
+	Name       string           `json:"name"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+	TotalCount int64            `json:"total_count"`
 }
 
 // GetCashiers: Retrieves paginated list of active cashiers with search capability
 // Purpose: List all active cashiers for management UI
 // Parameters:
 //
-//	$1: search_term - Optional text to filter cashiers by name or name (NULL for no filter)
+//	$1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
 //	$2: limit - Maximum number of records to return
 //	$3: offset - Number of records to skip for pagination
 //
@@ -169,11 +203,11 @@ type GetCashiersRow struct {
 //
 // Business Logic:
 //   - Excludes soft-deleted cashiers (deleted_at IS NULL)
-//   - Supports partial text matching on name and name fields (case-insensitive)
+//   - Supports partial text matching on name and username fields (case-insensitive)
 //   - Returns newest cashiers first (created_at DESC)
 //   - Provides total_count for pagination calculations
 func (q *Queries) GetCashiers(ctx context.Context, arg GetCashiersParams) ([]*GetCashiersRow, error) {
-	rows, err := q.db.QueryContext(ctx, getCashiers, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, getCashiers, arg.Column1, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -188,15 +222,11 @@ func (q *Queries) GetCashiers(ctx context.Context, arg GetCashiersParams) ([]*Ge
 			&i.Name,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.DeletedAt,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -205,7 +235,15 @@ func (q *Queries) GetCashiers(ctx context.Context, arg GetCashiersParams) ([]*Ge
 }
 
 const getCashiersActive = `-- name: GetCashiersActive :many
-SELECT cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     deleted_at IS NULL
@@ -227,21 +265,21 @@ type GetCashiersActiveParams struct {
 }
 
 type GetCashiersActiveRow struct {
-	CashierID  int32        `json:"cashier_id"`
-	MerchantID int32        `json:"merchant_id"`
-	UserID     int32        `json:"user_id"`
-	Name       string       `json:"name"`
-	CreatedAt  sql.NullTime `json:"created_at"`
-	UpdatedAt  sql.NullTime `json:"updated_at"`
-	DeletedAt  sql.NullTime `json:"deleted_at"`
-	TotalCount int64        `json:"total_count"`
+	CashierID  int32            `json:"cashier_id"`
+	MerchantID int32            `json:"merchant_id"`
+	UserID     int32            `json:"user_id"`
+	Name       string           `json:"name"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+	DeletedAt  pgtype.Timestamp `json:"deleted_at"`
+	TotalCount int64            `json:"total_count"`
 }
 
 // GetCashiersActive: Retrieves paginated list of active cashiers with search capability
 // Purpose: List all active cashiers for management UI
 // Parameters:
 //
-//	$1: search_term - Optional text to filter cashiers by name or name (NULL for no filter)
+//	$1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
 //	$2: limit - Maximum number of records to return
 //	$3: offset - Number of records to skip for pagination
 //
@@ -251,11 +289,11 @@ type GetCashiersActiveRow struct {
 //
 // Business Logic:
 //   - Excludes soft-deleted cashiers (deleted_at IS NULL)
-//   - Supports partial text matching on name and name fields (case-insensitive)
+//   - Supports partial text matching on name and username fields (case-insensitive)
 //   - Returns newest cashiers first (created_at DESC)
 //   - Provides total_count for pagination calculations
 func (q *Queries) GetCashiersActive(ctx context.Context, arg GetCashiersActiveParams) ([]*GetCashiersActiveRow, error) {
-	rows, err := q.db.QueryContext(ctx, getCashiersActive, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, getCashiersActive, arg.Column1, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -277,9 +315,6 @@ func (q *Queries) GetCashiersActive(ctx context.Context, arg GetCashiersActivePa
 		}
 		items = append(items, &i)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -287,7 +322,15 @@ func (q *Queries) GetCashiersActive(ctx context.Context, arg GetCashiersActivePa
 }
 
 const getCashiersByMerchant = `-- name: GetCashiersByMerchant :many
-SELECT cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     merchant_id = $1
@@ -310,14 +353,14 @@ type GetCashiersByMerchantParams struct {
 }
 
 type GetCashiersByMerchantRow struct {
-	CashierID  int32        `json:"cashier_id"`
-	MerchantID int32        `json:"merchant_id"`
-	UserID     int32        `json:"user_id"`
-	Name       string       `json:"name"`
-	CreatedAt  sql.NullTime `json:"created_at"`
-	UpdatedAt  sql.NullTime `json:"updated_at"`
-	DeletedAt  sql.NullTime `json:"deleted_at"`
-	TotalCount int64        `json:"total_count"`
+	CashierID  int32            `json:"cashier_id"`
+	MerchantID int32            `json:"merchant_id"`
+	UserID     int32            `json:"user_id"`
+	Name       string           `json:"name"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+	DeletedAt  pgtype.Timestamp `json:"deleted_at"`
+	TotalCount int64            `json:"total_count"`
 }
 
 // GetCashiersByMerchant: Retrieves active cashiers filtered by merchant_id
@@ -332,7 +375,7 @@ type GetCashiersByMerchantRow struct {
 //
 //	Cashier records belonging to specified merchant with total_count
 func (q *Queries) GetCashiersByMerchant(ctx context.Context, arg GetCashiersByMerchantParams) ([]*GetCashiersByMerchantRow, error) {
-	rows, err := q.db.QueryContext(ctx, getCashiersByMerchant,
+	rows, err := q.db.Query(ctx, getCashiersByMerchant,
 		arg.MerchantID,
 		arg.Column2,
 		arg.Limit,
@@ -359,9 +402,6 @@ func (q *Queries) GetCashiersByMerchant(ctx context.Context, arg GetCashiersByMe
 		}
 		items = append(items, &i)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -369,7 +409,15 @@ func (q *Queries) GetCashiersByMerchant(ctx context.Context, arg GetCashiersByMe
 }
 
 const getCashiersTrashed = `-- name: GetCashiersTrashed :many
-SELECT cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     deleted_at IS NOT NULL
@@ -391,21 +439,21 @@ type GetCashiersTrashedParams struct {
 }
 
 type GetCashiersTrashedRow struct {
-	CashierID  int32        `json:"cashier_id"`
-	MerchantID int32        `json:"merchant_id"`
-	UserID     int32        `json:"user_id"`
-	Name       string       `json:"name"`
-	CreatedAt  sql.NullTime `json:"created_at"`
-	UpdatedAt  sql.NullTime `json:"updated_at"`
-	DeletedAt  sql.NullTime `json:"deleted_at"`
-	TotalCount int64        `json:"total_count"`
+	CashierID  int32            `json:"cashier_id"`
+	MerchantID int32            `json:"merchant_id"`
+	UserID     int32            `json:"user_id"`
+	Name       string           `json:"name"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+	DeletedAt  pgtype.Timestamp `json:"deleted_at"`
+	TotalCount int64            `json:"total_count"`
 }
 
 // GetCashiersTrashed: Retrieves paginated list of soft-deleted cashiers with search capability
 // Purpose: List all trashed (soft-deleted) cashiers for recovery or audit purposes
 // Parameters:
 //
-//	$1: search_term - Optional text to filter cashiers by name or name (NULL for no filter)
+//	$1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
 //	$2: limit - Maximum number of records to return
 //	$3: offset - Number of records to skip for pagination
 //
@@ -415,11 +463,11 @@ type GetCashiersTrashedRow struct {
 //
 // Business Logic:
 //   - Includes only soft-deleted cashiers (deleted_at IS NOT NULL)
-//   - Supports partial text matching on name and name fields (case-insensitive)
+//   - Supports partial text matching on name and username fields (case-insensitive)
 //   - Returns newest deleted cashiers first (created_at DESC)
 //   - Provides total_count for pagination calculations
 func (q *Queries) GetCashiersTrashed(ctx context.Context, arg GetCashiersTrashedParams) ([]*GetCashiersTrashedRow, error) {
-	rows, err := q.db.QueryContext(ctx, getCashiersTrashed, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, getCashiersTrashed, arg.Column1, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -440,9 +488,6 @@ func (q *Queries) GetCashiersTrashed(ctx context.Context, arg GetCashiersTrashed
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -513,7 +558,7 @@ type GetMonthlyCashierRow struct {
 //   - Uses abbreviated month names for compact visual reporting
 //   - Orders chronologically for trend analysis
 func (q *Queries) GetMonthlyCashier(ctx context.Context, dollar_1 time.Time) ([]*GetMonthlyCashierRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMonthlyCashier, dollar_1)
+	rows, err := q.db.Query(ctx, getMonthlyCashier, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -531,9 +576,6 @@ func (q *Queries) GetMonthlyCashier(ctx context.Context, dollar_1 time.Time) ([]
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -611,7 +653,7 @@ type GetMonthlyCashierByCashierIdRow struct {
 //   - Uses abbreviated month names for compact visual reporting
 //   - Orders chronologically for trend analysis
 func (q *Queries) GetMonthlyCashierByCashierId(ctx context.Context, arg GetMonthlyCashierByCashierIdParams) ([]*GetMonthlyCashierByCashierIdRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMonthlyCashierByCashierId, arg.Column1, arg.CashierID)
+	rows, err := q.db.Query(ctx, getMonthlyCashierByCashierId, arg.Column1, arg.CashierID)
 	if err != nil {
 		return nil, err
 	}
@@ -629,9 +671,6 @@ func (q *Queries) GetMonthlyCashierByCashierId(ctx context.Context, arg GetMonth
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -709,7 +748,7 @@ type GetMonthlyCashierByMerchantRow struct {
 //   - Uses abbreviated month names for compact visual reporting
 //   - Orders chronologically for trend analysis
 func (q *Queries) GetMonthlyCashierByMerchant(ctx context.Context, arg GetMonthlyCashierByMerchantParams) ([]*GetMonthlyCashierByMerchantRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMonthlyCashierByMerchant, arg.Column1, arg.MerchantID)
+	rows, err := q.db.Query(ctx, getMonthlyCashierByMerchant, arg.Column1, arg.MerchantID)
 	if err != nil {
 		return nil, err
 	}
@@ -727,9 +766,6 @@ func (q *Queries) GetMonthlyCashierByMerchant(ctx context.Context, arg GetMonthl
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -806,11 +842,11 @@ ORDER BY am.year::INT DESC, am.month DESC
 `
 
 type GetMonthlyTotalSalesByIdParams struct {
-	Extract     time.Time    `json:"extract"`
-	CreatedAt   sql.NullTime `json:"created_at"`
-	CreatedAt_2 sql.NullTime `json:"created_at_2"`
-	CreatedAt_3 sql.NullTime `json:"created_at_3"`
-	CashierID   int32        `json:"cashier_id"`
+	Extract     pgtype.Date      `json:"extract"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamp `json:"created_at_2"`
+	CreatedAt_3 pgtype.Timestamp `json:"created_at_3"`
+	CashierID   int32            `json:"cashier_id"`
 }
 
 type GetMonthlyTotalSalesByIdRow struct {
@@ -841,7 +877,7 @@ type GetMonthlyTotalSalesByIdRow struct {
 //   - Only includes active/non-deleted orders and cashiers
 //   - Formats output for easy display in reports/dashboards
 func (q *Queries) GetMonthlyTotalSalesById(ctx context.Context, arg GetMonthlyTotalSalesByIdParams) ([]*GetMonthlyTotalSalesByIdRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMonthlyTotalSalesById,
+	rows, err := q.db.Query(ctx, getMonthlyTotalSalesById,
 		arg.Extract,
 		arg.CreatedAt,
 		arg.CreatedAt_2,
@@ -859,9 +895,6 @@ func (q *Queries) GetMonthlyTotalSalesById(ctx context.Context, arg GetMonthlyTo
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -938,11 +971,11 @@ ORDER BY am.year::INT DESC, am.month DESC
 `
 
 type GetMonthlyTotalSalesByMerchantParams struct {
-	Extract     time.Time    `json:"extract"`
-	CreatedAt   sql.NullTime `json:"created_at"`
-	CreatedAt_2 sql.NullTime `json:"created_at_2"`
-	CreatedAt_3 sql.NullTime `json:"created_at_3"`
-	MerchantID  int32        `json:"merchant_id"`
+	Extract     pgtype.Date      `json:"extract"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamp `json:"created_at_2"`
+	CreatedAt_3 pgtype.Timestamp `json:"created_at_3"`
+	MerchantID  int32            `json:"merchant_id"`
 }
 
 type GetMonthlyTotalSalesByMerchantRow struct {
@@ -973,7 +1006,7 @@ type GetMonthlyTotalSalesByMerchantRow struct {
 //   - Only includes active/non-deleted orders and cashiers
 //   - Formats output for easy display in reports/dashboards
 func (q *Queries) GetMonthlyTotalSalesByMerchant(ctx context.Context, arg GetMonthlyTotalSalesByMerchantParams) ([]*GetMonthlyTotalSalesByMerchantRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMonthlyTotalSalesByMerchant,
+	rows, err := q.db.Query(ctx, getMonthlyTotalSalesByMerchant,
 		arg.Extract,
 		arg.CreatedAt,
 		arg.CreatedAt_2,
@@ -991,9 +1024,6 @@ func (q *Queries) GetMonthlyTotalSalesByMerchant(ctx context.Context, arg GetMon
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1069,10 +1099,10 @@ ORDER BY am.year::INT DESC, am.month DESC
 `
 
 type GetMonthlyTotalSalesCashierParams struct {
-	Extract     time.Time    `json:"extract"`
-	CreatedAt   sql.NullTime `json:"created_at"`
-	CreatedAt_2 sql.NullTime `json:"created_at_2"`
-	CreatedAt_3 sql.NullTime `json:"created_at_3"`
+	Extract     pgtype.Date      `json:"extract"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamp `json:"created_at_2"`
+	CreatedAt_3 pgtype.Timestamp `json:"created_at_3"`
 }
 
 type GetMonthlyTotalSalesCashierRow struct {
@@ -1102,7 +1132,7 @@ type GetMonthlyTotalSalesCashierRow struct {
 //   - Only includes active/non-deleted orders and cashiers
 //   - Formats output for easy display in reports/dashboards
 func (q *Queries) GetMonthlyTotalSalesCashier(ctx context.Context, arg GetMonthlyTotalSalesCashierParams) ([]*GetMonthlyTotalSalesCashierRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMonthlyTotalSalesCashier,
+	rows, err := q.db.Query(ctx, getMonthlyTotalSalesCashier,
 		arg.Extract,
 		arg.CreatedAt,
 		arg.CreatedAt_2,
@@ -1119,9 +1149,6 @@ func (q *Queries) GetMonthlyTotalSalesCashier(ctx context.Context, arg GetMonthl
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1205,7 +1232,7 @@ type GetYearlyCashierRow struct {
 //   - Orders results chronologically then by cashier for consistent reporting
 //   - Designed for workforce planning and incentive calculations
 func (q *Queries) GetYearlyCashier(ctx context.Context, dollar_1 time.Time) ([]*GetYearlyCashierRow, error) {
-	rows, err := q.db.QueryContext(ctx, getYearlyCashier, dollar_1)
+	rows, err := q.db.Query(ctx, getYearlyCashier, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -1223,9 +1250,6 @@ func (q *Queries) GetYearlyCashier(ctx context.Context, dollar_1 time.Time) ([]*
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1316,7 +1340,7 @@ type GetYearlyCashierByCashierIdRow struct {
 //   - Orders results chronologically then by cashier for consistent reporting
 //   - Designed for workforce planning and incentive calculations
 func (q *Queries) GetYearlyCashierByCashierId(ctx context.Context, arg GetYearlyCashierByCashierIdParams) ([]*GetYearlyCashierByCashierIdRow, error) {
-	rows, err := q.db.QueryContext(ctx, getYearlyCashierByCashierId, arg.Column1, arg.CashierID)
+	rows, err := q.db.Query(ctx, getYearlyCashierByCashierId, arg.Column1, arg.CashierID)
 	if err != nil {
 		return nil, err
 	}
@@ -1334,9 +1358,6 @@ func (q *Queries) GetYearlyCashierByCashierId(ctx context.Context, arg GetYearly
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1427,7 +1448,7 @@ type GetYearlyCashierByMerchantRow struct {
 //   - Orders results chronologically then by cashier for consistent reporting
 //   - Designed for workforce planning and incentive calculations
 func (q *Queries) GetYearlyCashierByMerchant(ctx context.Context, arg GetYearlyCashierByMerchantParams) ([]*GetYearlyCashierByMerchantRow, error) {
-	rows, err := q.db.QueryContext(ctx, getYearlyCashierByMerchant, arg.Column1, arg.MerchantID)
+	rows, err := q.db.Query(ctx, getYearlyCashierByMerchant, arg.Column1, arg.MerchantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1445,9 +1466,6 @@ func (q *Queries) GetYearlyCashierByMerchant(ctx context.Context, arg GetYearlyC
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1522,7 +1540,7 @@ type GetYearlyTotalSalesByIdRow struct {
 //   - Includes zero-value years for complete reporting
 //   - Filters by cashier while maintaining data integrity
 func (q *Queries) GetYearlyTotalSalesById(ctx context.Context, arg GetYearlyTotalSalesByIdParams) ([]*GetYearlyTotalSalesByIdRow, error) {
-	rows, err := q.db.QueryContext(ctx, getYearlyTotalSalesById, arg.Column1, arg.CashierID)
+	rows, err := q.db.Query(ctx, getYearlyTotalSalesById, arg.Column1, arg.CashierID)
 	if err != nil {
 		return nil, err
 	}
@@ -1534,9 +1552,6 @@ func (q *Queries) GetYearlyTotalSalesById(ctx context.Context, arg GetYearlyTota
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1611,7 +1626,7 @@ type GetYearlyTotalSalesByMerchantRow struct {
 //   - Includes zero-value years for complete reporting
 //   - Filters by merchant while maintaining data integrity
 func (q *Queries) GetYearlyTotalSalesByMerchant(ctx context.Context, arg GetYearlyTotalSalesByMerchantParams) ([]*GetYearlyTotalSalesByMerchantRow, error) {
-	rows, err := q.db.QueryContext(ctx, getYearlyTotalSalesByMerchant, arg.Column1, arg.MerchantID)
+	rows, err := q.db.Query(ctx, getYearlyTotalSalesByMerchant, arg.Column1, arg.MerchantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1623,9 +1638,6 @@ func (q *Queries) GetYearlyTotalSalesByMerchant(ctx context.Context, arg GetYear
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1693,7 +1705,7 @@ type GetYearlyTotalSalesCashierRow struct {
 //   - Includes zero-value years for complete reporting
 //   - Filters by merchant while maintaining data integrity
 func (q *Queries) GetYearlyTotalSalesCashier(ctx context.Context, dollar_1 int32) ([]*GetYearlyTotalSalesCashierRow, error) {
-	rows, err := q.db.QueryContext(ctx, getYearlyTotalSalesCashier, dollar_1)
+	rows, err := q.db.Query(ctx, getYearlyTotalSalesCashier, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -1705,9 +1717,6 @@ func (q *Queries) GetYearlyTotalSalesCashier(ctx context.Context, dollar_1 int32
 			return nil, err
 		}
 		items = append(items, &i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1730,7 +1739,7 @@ WHERE
 //   - No parameters needed
 //   - Useful for system recovery scenarios
 func (q *Queries) RestoreAllCashiers(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, restoreAllCashiers)
+	_, err := q.db.Exec(ctx, restoreAllCashiers)
 	return err
 }
 
@@ -1742,7 +1751,13 @@ WHERE
     cashier_id = $1
     AND deleted_at IS NOT NULL
 RETURNING
-    cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at
 `
 
 // RestoreCashier: Recovers a soft-deleted cashier
@@ -1757,7 +1772,7 @@ RETURNING
 //   - Only works on previously deleted records
 //   - Maintains all original data
 func (q *Queries) RestoreCashier(ctx context.Context, cashierID int32) (*Cashier, error) {
-	row := q.db.QueryRowContext(ctx, restoreCashier, cashierID)
+	row := q.db.QueryRow(ctx, restoreCashier, cashierID)
 	var i Cashier
 	err := row.Scan(
 		&i.CashierID,
@@ -1779,7 +1794,13 @@ WHERE
     cashier_id = $1
     AND deleted_at IS NULL
 RETURNING
-    cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at
 `
 
 // TrashCashier: Soft-deletes a cashier record
@@ -1794,7 +1815,7 @@ RETURNING
 //   - Only works on currently active records
 //   - Allows for recovery via restore function
 func (q *Queries) TrashCashier(ctx context.Context, cashierID int32) (*Cashier, error) {
-	row := q.db.QueryRowContext(ctx, trashCashier, cashierID)
+	row := q.db.QueryRow(ctx, trashCashier, cashierID)
 	var i Cashier
 	err := row.Scan(
 		&i.CashierID,
@@ -1817,12 +1838,26 @@ WHERE
     cashier_id = $1
     AND deleted_at IS NULL
 RETURNING
-    cashier_id, merchant_id, user_id, name, created_at, updated_at, deleted_at
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at
 `
 
 type UpdateCashierParams struct {
 	CashierID int32  `json:"cashier_id"`
 	Name      string `json:"name"`
+}
+
+type UpdateCashierRow struct {
+	CashierID  int32            `json:"cashier_id"`
+	MerchantID int32            `json:"merchant_id"`
+	UserID     int32            `json:"user_id"`
+	Name       string           `json:"name"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
 }
 
 // UpdateCashier: Modifies cashier information
@@ -1837,9 +1872,9 @@ type UpdateCashierParams struct {
 //   - Automatically updates updated_at timestamp
 //   - Only affects active (non-deleted) records
 //   - Returns the modified record for confirmation
-func (q *Queries) UpdateCashier(ctx context.Context, arg UpdateCashierParams) (*Cashier, error) {
-	row := q.db.QueryRowContext(ctx, updateCashier, arg.CashierID, arg.Name)
-	var i Cashier
+func (q *Queries) UpdateCashier(ctx context.Context, arg UpdateCashierParams) (*UpdateCashierRow, error) {
+	row := q.db.QueryRow(ctx, updateCashier, arg.CashierID, arg.Name)
+	var i UpdateCashierRow
 	err := row.Scan(
 		&i.CashierID,
 		&i.MerchantID,
@@ -1847,7 +1882,6 @@ func (q *Queries) UpdateCashier(ctx context.Context, arg UpdateCashierParams) (*
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return &i, err
 }

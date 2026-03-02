@@ -7,579 +7,762 @@ package graph
 import (
 	"context"
 
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
+	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/model"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
-	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/cashier_errors"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // CreateCashier is the resolver for the createCashier field.
 func (r *mutationResolver) CreateCashier(ctx context.Context, input model.CreateCashierRequest) (*model.APIResponseCashier, error) {
-	req := &pb.CreateCashierRequest{
-		Name:       input.Name,
-		MerchantId: int32(input.MerchantID),
-		UserId:     int32(input.UserID),
-	}
+	return ResolverHandle(r.ResolverHandle, "CreateCashier", ctx, func(ctx context.Context) (*model.APIResponseCashier, error) {
+		req := &requests.CreateCashierRequest{
+			Name:       input.Name,
+			MerchantID: int(input.MerchantID),
+			UserID:     int(input.UserID),
+		}
 
-	cashier, err := r.CashierGraphql.CashierClient.CreateCashier(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashier(cashier)
+		reqPb := &pb.CreateCashierRequest{
+			Name:       req.Name,
+			MerchantId: int32(req.MerchantID),
+			UserId:     int32(req.UserID),
+		}
 
-	return so, nil
+		cashier, err := r.CashierGraphql.CashierClient.CreateCashier(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "CreateCashier")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashier(cashier)
+
+		r.CashierGraphql.Cache.DeleteCashierCache(ctx, int(cashier.Data.Id))
+
+		return so, nil
+	})
 }
 
 // UpdateCashier is the resolver for the updateCashier field.
 func (r *mutationResolver) UpdateCashier(ctx context.Context, input model.UpdateCashierRequest) (*model.APIResponseCashier, error) {
-	id := int32(input.CashierID)
+	return ResolverHandle(r.ResolverHandle, "UpdateCashier", ctx, func(ctx context.Context) (*model.APIResponseCashier, error) {
+		id := int(input.CashierID)
 
-	if id == 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	req := &pb.UpdateCashierRequest{
-		CashierId: id,
-		Name:      input.Name,
-	}
+		req := &requests.UpdateCashierRequest{
+			CashierID: &id,
+			Name:      input.Name,
+		}
 
-	cashier, err := r.CashierGraphql.CashierClient.UpdateCashier(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashier(cashier)
+		reqPb := &pb.UpdateCashierRequest{
+			CashierId: int32(id),
+			Name:      req.Name,
+		}
 
-	return so, nil
+		cashier, err := r.CashierGraphql.CashierClient.UpdateCashier(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "UpdateCashier")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashier(cashier)
+
+		r.CashierGraphql.Cache.DeleteCashierCache(ctx, id)
+
+		return so, nil
+	})
 }
 
 // TrashedCashier is the resolver for the trashedCashier field.
 func (r *mutationResolver) TrashedCashier(ctx context.Context, input model.FindByIDCashierRequest) (*model.APIResponseCashierDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "TrashedCashier", ctx, func(ctx context.Context) (*model.APIResponseCashierDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	cashier, err := r.CashierGraphql.CashierClient.TrashedCashier(ctx, &pb.FindByIdCashierRequest{
-		Id: id,
+		reqPb := &pb.FindByIdCashierRequest{
+			Id: int32(id),
+		}
+
+		cashier, err := r.CashierGraphql.CashierClient.TrashedCashier(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "TrashedCashier")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierDeleteAt(cashier)
+
+		r.CashierGraphql.Cache.DeleteCashierCache(ctx, id)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierDeleteAt(cashier)
-
-	return so, nil
 }
 
 // RestoreCashier is the resolver for the restoreCashier field.
 func (r *mutationResolver) RestoreCashier(ctx context.Context, input model.FindByIDCashierRequest) (*model.APIResponseCashierDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "RestoreCashier", ctx, func(ctx context.Context) (*model.APIResponseCashierDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	cashier, err := r.CashierGraphql.CashierClient.RestoreCashier(ctx, &pb.FindByIdCashierRequest{
-		Id: id,
+		reqPb := &pb.FindByIdCashierRequest{
+			Id: int32(id),
+		}
+
+		cashier, err := r.CashierGraphql.CashierClient.RestoreCashier(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreCashier")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierDeleteAt(cashier)
+
+		r.CashierGraphql.Cache.DeleteCashierCache(ctx, id)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierDeleteAt(cashier)
-
-	return so, nil
 }
 
 // DeleteCashierPermanent is the resolver for the deleteCashierPermanent field.
 func (r *mutationResolver) DeleteCashierPermanent(ctx context.Context, input model.FindByIDCashierRequest) (*model.APIResponseCashierDelete, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "DeleteCashierPermanent", ctx, func(ctx context.Context) (*model.APIResponseCashierDelete, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.CashierGraphql.CashierClient.DeleteCashierPermanent(ctx, &pb.FindByIdCashierRequest{
-		Id: id,
+		reqPb := &pb.FindByIdCashierRequest{
+			Id: int32(id),
+		}
+
+		res, err := r.CashierGraphql.CashierClient.DeleteCashierPermanent(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteCashierPermanent")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierDelete(res)
+
+		r.CashierGraphql.Cache.DeleteCashierCache(ctx, id)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierDelete(res)
-
-	return so, nil
 }
 
 // RestoreAllCashier is the resolver for the restoreAllCashier field.
 func (r *mutationResolver) RestoreAllCashier(ctx context.Context) (*model.APIResponseCashierAll, error) {
-	res, err := r.CashierGraphql.CashierClient.RestoreAllCashier(ctx, &emptypb.Empty{})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+	return ResolverHandle(r.ResolverHandle, "RestoreAllCashier", ctx, func(ctx context.Context) (*model.APIResponseCashierAll, error) {
+		res, err := r.CashierGraphql.CashierClient.RestoreAllCashier(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreAllCashier")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierAll(res)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierAll(res)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // DeleteAllCashierPermanent is the resolver for the deleteAllCashierPermanent field.
 func (r *mutationResolver) DeleteAllCashierPermanent(ctx context.Context) (*model.APIResponseCashierAll, error) {
-	res, err := r.CashierGraphql.CashierClient.DeleteAllCashierPermanent(ctx, &emptypb.Empty{})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+	return ResolverHandle(r.ResolverHandle, "DeleteAllCashierPermanent", ctx, func(ctx context.Context) (*model.APIResponseCashierAll, error) {
+		res, err := r.CashierGraphql.CashierClient.DeleteAllCashierPermanent(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteAllCashierPermanent")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierAll(res)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashierAll(res)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindMonthlyTotalSales is the resolver for the findMonthlyTotalSales field.
 func (r *queryResolver) FindMonthlyTotalSales(ctx context.Context, input model.FindYearMonthTotalSales) (*model.APIResponseCashierMonthlyTotalSales, error) {
-	year := input.Year
-	month := input.Month
+	return ResolverHandle(r.ResolverHandle, "FindMonthlyTotalSales", ctx, func(ctx context.Context) (*model.APIResponseCashierMonthlyTotalSales, error) {
+		year := int(input.Year)
+		month := int(input.Month)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
 
-	if month <= 0 || month >= 12 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidMonth
-	}
+		if month <= 0 || month > 12 {
+			return nil, errors.NewBadRequestError("month is required")
+		}
 
-	req := &pb.FindYearMonthTotalSales{
-		Year:  int32(year),
-		Month: int32(month),
-	}
+		if cached, found := r.CashierGraphql.Cache.GetMonthlyTotalSalesCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	result, err := r.CashierGraphql.CashierClient.FindMonthlyTotalSales(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindYearMonthTotalSales{
+			Year:  int32(year),
+			Month: int32(month),
+		}
+		result, err := r.CashierGraphql.CashierClient.FindMonthlyTotalSales(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthlyTotalSales")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlyTotalSales(result)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlyTotalSales(result)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetMonthlyTotalSalesCache(ctx, &input, so)
+
+		return so, nil
+	})
 }
 
 // FindYearlyTotalSales is the resolver for the findYearlyTotalSales field.
 func (r *queryResolver) FindYearlyTotalSales(ctx context.Context, input model.FindYearTotalSales) (*model.APIResponseCashierYearlyTotalSales, error) {
-	year := int32(input.Year)
+	return ResolverHandle(r.ResolverHandle, "FindYearlyTotalSales", ctx, func(ctx context.Context) (*model.APIResponseCashierYearlyTotalSales, error) {
+		year := int(input.Year)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
 
-	result, err := r.CashierGraphql.CashierClient.FindYearlyTotalSales(ctx, &pb.FindYearTotalSales{
-		Year: year,
+		if cached, found := r.CashierGraphql.Cache.GetYearlyTotalSalesCache(ctx, year); found {
+			return cached, nil
+		}
+
+		result, err := r.CashierGraphql.CashierClient.FindYearlyTotalSales(ctx, &pb.FindYearTotalSales{
+			Year: int32(year),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearlyTotalSales")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlyTotalSales(result)
+
+		r.CashierGraphql.Cache.SetYearlyTotalSalesCache(ctx, year, so)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlyTotalSales(result)
-
-	return so, nil
 }
 
 // FindMonthlyTotalSalesByID is the resolver for the findMonthlyTotalSalesById field.
 func (r *queryResolver) FindMonthlyTotalSalesByID(ctx context.Context, input model.FindYearMonthTotalSalesByID) (*model.APIResponseCashierMonthlyTotalSales, error) {
-	year := input.Year
-	month := input.Month
-	id := input.CashierID
+	return ResolverHandle(r.ResolverHandle, "FindMonthlyTotalSalesByID", ctx, func(ctx context.Context) (*model.APIResponseCashierMonthlyTotalSales, error) {
+		year := int(input.Year)
+		month := int(input.Month)
+		id := int(input.CashierID)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if month <= 0 || month > 12 {
+			return nil, errors.NewBadRequestError("month is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("cashier id is required")
+		}
 
-	if month <= 0 || month >= 12 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidMonth
-	}
+		if cached, found := r.CashierGraphql.Cache.GetMonthlyTotalSalesByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	if id <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+		req := &pb.FindYearMonthTotalSalesById{
+			Year:      int32(year),
+			Month:     int32(month),
+			CashierId: int32(id),
+		}
+		result, err := r.CashierGraphql.CashierClient.FindMonthlyTotalSalesById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthlyTotalSalesByID")
+		}
 
-	req := &pb.FindYearMonthTotalSalesById{
-		Year:      int32(year),
-		Month:     int32(month),
-		CashierId: int32(id),
-	}
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlyTotalSales(result)
 
-	result, err := r.CashierGraphql.CashierClient.FindMonthlyTotalSalesById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		r.CashierGraphql.Cache.SetMonthlyTotalSalesByIdCache(ctx, &input, so)
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlyTotalSales(result)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindYearlyTotalSalesByID is the resolver for the findYearlyTotalSalesById field.
 func (r *queryResolver) FindYearlyTotalSalesByID(ctx context.Context, input model.FindYearTotalSalesByID) (*model.APIResponseCashierYearlyTotalSales, error) {
-	year := input.Year
-	id := input.CashierID
+	return ResolverHandle(r.ResolverHandle, "FindYearlyTotalSalesByID", ctx, func(ctx context.Context) (*model.APIResponseCashierYearlyTotalSales, error) {
+		year := int(input.Year)
+		id := int(input.CashierID)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("cashier id is required")
+		}
 
-	if id <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+		if cached, found := r.CashierGraphql.Cache.GetYearlyTotalSalesByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearTotalSalesById{
-		Year:      int32(year),
-		CashierId: int32(id),
-	}
+		req := &pb.FindYearTotalSalesById{
+			Year:      int32(year),
+			CashierId: int32(id),
+		}
+		result, err := r.CashierGraphql.CashierClient.FindYearlyTotalSalesById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearlyTotalSalesByID")
+		}
 
-	result, err := r.CashierGraphql.CashierClient.FindYearlyTotalSalesById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlyTotalSales(result)
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlyTotalSales(result)
+		r.CashierGraphql.Cache.SetYearlyTotalSalesByIdCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindMonthlyTotalSalesByMerchant is the resolver for the findMonthlyTotalSalesByMerchant field.
 func (r *queryResolver) FindMonthlyTotalSalesByMerchant(ctx context.Context, input model.FindYearMonthTotalSalesByMerchant) (*model.APIResponseCashierMonthlyTotalSales, error) {
-	year := input.Year
-	month := input.Month
-	merchantId := input.MerchantID
+	return ResolverHandle(r.ResolverHandle, "FindMonthlyTotalSalesByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCashierMonthlyTotalSales, error) {
+		year := int(input.Year)
+		month := int(input.Month)
+		merchantId := int(input.MerchantID)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if month <= 0 || month > 12 {
+			return nil, errors.NewBadRequestError("month is required")
+		}
+		if merchantId <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	if month <= 0 || month >= 12 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidMonth
-	}
+		if cached, found := r.CashierGraphql.Cache.GetMonthlyTotalSalesByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	if merchantId <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidMerchantId
-	}
+		req := &pb.FindYearMonthTotalSalesByMerchant{
+			Year:       int32(year),
+			Month:      int32(month),
+			MerchantId: int32(merchantId),
+		}
+		result, err := r.CashierGraphql.CashierClient.FindMonthlyTotalSalesByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthlyTotalSalesByMerchant")
+		}
 
-	req := &pb.FindYearMonthTotalSalesByMerchant{
-		Year:       int32(year),
-		Month:      int32(month),
-		MerchantId: int32(merchantId),
-	}
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlyTotalSales(result)
 
-	result, err := r.CashierGraphql.CashierClient.FindMonthlyTotalSalesByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		r.CashierGraphql.Cache.SetMonthlyTotalSalesByMerchantCache(ctx, &input, so)
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlyTotalSales(result)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindYearlyTotalSalesByMerchant is the resolver for the findYearlyTotalSalesByMerchant field.
 func (r *queryResolver) FindYearlyTotalSalesByMerchant(ctx context.Context, input model.FindYearTotalSalesByMerchant) (*model.APIResponseCashierYearlyTotalSales, error) {
-	year := input.Year
-	merchantId := input.MerchantID
+	return ResolverHandle(r.ResolverHandle, "FindYearlyTotalSalesByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCashierYearlyTotalSales, error) {
+		year := int(input.Year)
+		merchantId := int(input.MerchantID)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if merchantId <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	if merchantId <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidMerchantId
-	}
+		if cached, found := r.CashierGraphql.Cache.GetYearlyTotalSalesByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearTotalSalesByMerchant{
-		Year:       int32(year),
-		MerchantId: int32(merchantId),
-	}
+		req := &pb.FindYearTotalSalesByMerchant{
+			Year:       int32(year),
+			MerchantId: int32(merchantId),
+		}
+		result, err := r.CashierGraphql.CashierClient.FindYearlyTotalSalesByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearlyTotalSalesByMerchant")
+		}
 
-	result, err := r.CashierGraphql.CashierClient.FindYearlyTotalSalesByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlyTotalSales(result)
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlyTotalSales(result)
+		r.CashierGraphql.Cache.SetYearlyTotalSalesByMerchantCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindAllCashier is the resolver for the findAllCashier field.
 func (r *queryResolver) FindAllCashier(ctx context.Context, input *model.FindAllCashierRequest) (*model.APIResponsePaginationCashier, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindAllCashier", ctx, func(ctx context.Context) (*model.APIResponsePaginationCashier, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
+		normalizedInput := &model.FindAllCashierRequest{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		if cached, found := r.CashierGraphql.Cache.GetCachedCashiersCache(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	req := &pb.FindAllCashierRequest{
-		Search:   *search,
-		Page:     page,
-		PageSize: pageSize,
-	}
+		req := &pb.FindAllCashierRequest{
+			Search:   *input.Search,
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+		}
+		cashiers, err := r.CashierGraphql.CashierClient.FindAll(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindAllCashier")
+		}
 
-	cashiers, err := r.CashierGraphql.CashierClient.FindAll(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashier(cashiers)
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashier(cashiers)
+		r.CashierGraphql.Cache.SetCachedCashiersCache(ctx, normalizedInput, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindByIDCashier is the resolver for the findByIdCashier field.
 func (r *queryResolver) FindByIDCashier(ctx context.Context, input model.FindByIDCashierRequest) (*model.APIResponseCashier, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "FindByIDCashier", ctx, func(ctx context.Context) (*model.APIResponseCashier, error) {
+		id := int(input.ID)
 
-	if id <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.CashierGraphql.CashierClient.FindById(ctx, &pb.FindByIdCashierRequest{
-		Id: id,
+		if cached, found := r.CashierGraphql.Cache.GetCachedCashier(ctx, id); found {
+			return cached, nil
+		}
+
+		res, err := r.CashierGraphql.CashierClient.FindById(ctx, &pb.FindByIdCashierRequest{
+			Id: int32(id),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByIDCashier")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseCashier(res)
+
+		r.CashierGraphql.Cache.SetCachedCashier(ctx, so)
+
+		return so, nil
 	})
-
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseCashier(res)
-
-	return so, nil
 }
 
 // FindMonthSales is the resolver for the findMonthSales field.
 func (r *queryResolver) FindMonthSales(ctx context.Context, input model.FindYearCashier) (*model.APIResponseCashierMonthSales, error) {
-	year := int32(input.Year)
+	return ResolverHandle(r.ResolverHandle, "FindMonthSales", ctx, func(ctx context.Context) (*model.APIResponseCashierMonthSales, error) {
+		year := int(input.Year)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
 
-	methods, err := r.CashierGraphql.CashierClient.FindMonthSales(ctx, &pb.FindYearCashier{
-		Year: year,
+		if cached, found := r.CashierGraphql.Cache.GetMonthlySalesCache(ctx, year); found {
+			return cached, nil
+		}
+
+		methods, err := r.CashierGraphql.CashierClient.FindMonthSales(ctx, &pb.FindYearCashier{
+			Year: int32(year),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthSales")
+		}
+
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlySales(methods)
+
+		r.CashierGraphql.Cache.SetMonthlySalesCache(ctx, year, so)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlySales(methods)
-
-	return so, nil
 }
 
 // FindYearSales is the resolver for the findYearSales field.
 func (r *queryResolver) FindYearSales(ctx context.Context, input model.FindYearCashier) (*model.APIResponseCashierYearSales, error) {
-	year := int32(input.Year)
+	return ResolverHandle(r.ResolverHandle, "FindYearSales", ctx, func(ctx context.Context) (*model.APIResponseCashierYearSales, error) {
+		year := int(input.Year)
 
-	if year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
 
-	methods, err := r.CashierGraphql.CashierClient.FindYearSales(ctx, &pb.FindYearCashier{Year: year})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		if cached, found := r.CashierGraphql.Cache.GetYearlySalesCache(ctx, year); found {
+			return cached, nil
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlySales(methods)
+		methods, err := r.CashierGraphql.CashierClient.FindYearSales(ctx, &pb.FindYearCashier{Year: int32(year)})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearSales")
+		}
 
-	return so, nil
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlySales(methods)
+
+		r.CashierGraphql.Cache.SetYearlySalesCache(ctx, year, so)
+
+		return so, nil
+	})
 }
 
 // FindMonthSalesByMerchant is the resolver for the findMonthSalesByMerchant field.
 func (r *queryResolver) FindMonthSalesByMerchant(ctx context.Context, input model.FindYearCashierByMerchant) (*model.APIResponseCashierMonthSales, error) {
-	if input.Year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
-	if input.MerchantID <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidMerchantId
-	}
+	return ResolverHandle(r.ResolverHandle, "FindMonthSalesByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCashierMonthSales, error) {
+		if input.Year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if input.MerchantID <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	req := &pb.FindYearCashierByMerchant{
-		Year:       int32(input.Year),
-		MerchantId: int32(input.MerchantID),
-	}
+		if cached, found := r.CashierGraphql.Cache.GetMonthlyCashierByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	methods, err := r.CashierGraphql.CashierClient.FindMonthSalesByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindYearCashierByMerchant{
+			Year:       int32(input.Year),
+			MerchantId: int32(input.MerchantID),
+		}
+		methods, err := r.CashierGraphql.CashierClient.FindMonthSalesByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthSalesByMerchant")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlySales(methods)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlySales(methods)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetMonthlyCashierByMerchantCache(ctx, &input, so)
+
+		return so, nil
+	})
 }
 
 // FindYearSalesByMerchant is the resolver for the findYearSalesByMerchant field.
 func (r *queryResolver) FindYearSalesByMerchant(ctx context.Context, input model.FindYearCashierByMerchant) (*model.APIResponseCashierYearSales, error) {
-	if input.Year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
-	if input.MerchantID <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidMerchantId
-	}
+	return ResolverHandle(r.ResolverHandle, "FindYearSalesByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCashierYearSales, error) {
+		if input.Year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if input.MerchantID <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	req := &pb.FindYearCashierByMerchant{
-		Year:       int32(input.Year),
-		MerchantId: int32(input.MerchantID),
-	}
+		if cached, found := r.CashierGraphql.Cache.GetYearlyCashierByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	methods, err := r.CashierGraphql.CashierClient.FindYearSalesByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindYearCashierByMerchant{
+			Year:       int32(input.Year),
+			MerchantId: int32(input.MerchantID),
+		}
+		methods, err := r.CashierGraphql.CashierClient.FindYearSalesByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearSalesByMerchant")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlySales(methods)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlySales(methods)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetYearlyCashierByMerchantCache(ctx, &input, so)
+
+		return so, nil
+	})
 }
 
 // FindMonthSalesByID is the resolver for the findMonthSalesById field.
 func (r *queryResolver) FindMonthSalesByID(ctx context.Context, input model.FindYearCashierByID) (*model.APIResponseCashierMonthSales, error) {
-	if input.Year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
-	if input.CashierID <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+	return ResolverHandle(r.ResolverHandle, "FindMonthSalesByID", ctx, func(ctx context.Context) (*model.APIResponseCashierMonthSales, error) {
+		if input.Year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if input.CashierID <= 0 {
+			return nil, errors.NewBadRequestError("cashier id is required")
+		}
 
-	req := &pb.FindYearCashierById{
-		Year:      int32(input.Year),
-		CashierId: int32(input.CashierID),
-	}
+		if cached, found := r.CashierGraphql.Cache.GetMonthlyCashierByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	methods, err := r.CashierGraphql.CashierClient.FindMonthSalesById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindYearCashierById{
+			Year:      int32(input.Year),
+			CashierId: int32(input.CashierID),
+		}
+		methods, err := r.CashierGraphql.CashierClient.FindMonthSalesById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthSalesByID")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlySales(methods)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseMonthlySales(methods)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetMonthlyCashierByIdCache(ctx, &input, so)
+
+		return so, nil
+	})
 }
 
 // FindYearSalesByID is the resolver for the findYearSalesById field.
 func (r *queryResolver) FindYearSalesByID(ctx context.Context, input model.FindYearCashierByID) (*model.APIResponseCashierYearSales, error) {
-	if input.Year <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidYear
-	}
-	if input.CashierID <= 0 {
-		return nil, cashier_errors.ErrGraphqlFailedInvalidId
-	}
+	return ResolverHandle(r.ResolverHandle, "FindYearSalesByID", ctx, func(ctx context.Context) (*model.APIResponseCashierYearSales, error) {
+		if input.Year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if input.CashierID <= 0 {
+			return nil, errors.NewBadRequestError("cashier id is required")
+		}
 
-	req := &pb.FindYearCashierById{
-		Year:      int32(input.Year),
-		CashierId: int32(input.CashierID),
-	}
+		if cached, found := r.CashierGraphql.Cache.GetYearlyCashierByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	methods, err := r.CashierGraphql.CashierClient.FindYearSalesById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindYearCashierById{
+			Year:      int32(input.Year),
+			CashierId: int32(input.CashierID),
+		}
+		methods, err := r.CashierGraphql.CashierClient.FindYearSalesById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearSalesByID")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlySales(methods)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponseYearlySales(methods)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetYearlyCashierByIdCache(ctx, &input, so)
+
+		return so, nil
+	})
 }
 
 // FindByActiveCashier is the resolver for the findByActiveCashier field.
 func (r *queryResolver) FindByActiveCashier(ctx context.Context, input *model.FindAllCashierRequest) (*model.APIResponsePaginationCashierDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByActiveCashier", ctx, func(ctx context.Context) (*model.APIResponsePaginationCashierDeleteAt, error) {
+		// Normalize defaults
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllCashierRequest{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllCashierRequest{
-		Search:   *search,
-		Page:     page,
-		PageSize: pageSize,
-	}
+		if cached, found := r.CashierGraphql.Cache.GetCachedCashiersActive(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	cashiers, err := r.CashierGraphql.CashierClient.FindByActive(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllCashierRequest{
+			Search:   *input.Search,
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+		}
+		cashiers, err := r.CashierGraphql.CashierClient.FindByActive(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByActiveCashier")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashierDeleteAt(cashiers)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashierDeleteAt(cashiers)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetCachedCashiersActive(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByTrashedCashier is the resolver for the findByTrashedCashier field.
 func (r *queryResolver) FindByTrashedCashier(ctx context.Context, input *model.FindAllCashierRequest) (*model.APIResponsePaginationCashierDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByTrashedCashier", ctx, func(ctx context.Context) (*model.APIResponsePaginationCashierDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllCashierRequest{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllCashierRequest{
-		Search:   *search,
-		Page:     page,
-		PageSize: pageSize,
-	}
+		if cached, found := r.CashierGraphql.Cache.GetCachedCashiersTrashed(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	cashiers, err := r.CashierGraphql.CashierClient.FindByTrashed(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllCashierRequest{
+			Search:   *input.Search,
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+		}
+		cashiers, err := r.CashierGraphql.CashierClient.FindByTrashed(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByTrashedCashier")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashierDeleteAt(cashiers)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashierDeleteAt(cashiers)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetCachedCashiersTrashed(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByMerchantCashier is the resolver for the findByMerchantCashier field.
 func (r *queryResolver) FindByMerchantCashier(ctx context.Context, input *model.FindByMerchantCashierRequest) (*model.APIResponsePaginationCashier, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
-	merchantId := int32(input.MerchantID)
+	return ResolverHandle(r.ResolverHandle, "FindByMerchantCashier", ctx, func(ctx context.Context) (*model.APIResponsePaginationCashier, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindByMerchantCashierRequest{
+			Page:       &page,
+			PageSize:   &pageSize,
+			Search:     input.Search,
+			MerchantID: input.MerchantID,
+		}
 
-	req := &pb.FindByMerchantCashierRequest{
-		Search:     *search,
-		Page:       page,
-		MerchantId: merchantId,
-		PageSize:   pageSize,
-	}
+		if cached, found := r.CashierGraphql.Cache.GetCachedCashiersByMerchant(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	cashiers, err := r.CashierGraphql.CashierClient.FindByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindByMerchantCashierRequest{
+			Search:     *input.Search,
+			Page:       int32(page),
+			MerchantId: int32(input.MerchantID),
+			PageSize:   int32(pageSize),
+		}
+		cashiers, err := r.CashierGraphql.CashierClient.FindByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByMerchantCashier")
+		}
 
-	so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashier(cashiers)
+		so := r.CashierGraphql.Mapping.ToGraphqlResponsePaginationCashier(cashiers)
 
-	return so, nil
+		r.CashierGraphql.Cache.SetCachedCashiersByMerchant(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }

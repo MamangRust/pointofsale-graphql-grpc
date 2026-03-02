@@ -2,7 +2,6 @@ package seeder
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	db "github.com/MamangRust/pointofsale-graphql-grpc/pkg/database/schema"
@@ -39,13 +38,18 @@ func (r *merchantSeeder) Seed() error {
 	for i := 1; i <= 10; i++ {
 		userID := users[i%len(users)].UserID
 
+		desc := fmt.Sprintf("Deskripsi untuk Toko %d", i)
+		addr := fmt.Sprintf("Jl. Toko %d", i)
+		email := fmt.Sprintf("toko%d@example.com", i)
+		phone := fmt.Sprintf("0812345678%d", i)
+
 		merchant := db.CreateMerchantParams{
 			UserID:       userID,
 			Name:         fmt.Sprintf("Toko %d", i),
-			Description:  sql.NullString{String: fmt.Sprintf("Deskripsi untuk Toko %d", i), Valid: true},
-			Address:      sql.NullString{String: fmt.Sprintf("Jl. Toko %d", i), Valid: true},
-			ContactEmail: sql.NullString{String: fmt.Sprintf("toko%d@example.com", i), Valid: true},
-			ContactPhone: sql.NullString{String: fmt.Sprintf("0812345678%d", i), Valid: true},
+			Description:  &desc,
+			Address:      &addr,
+			ContactEmail: &email,
+			ContactPhone: &phone,
 			Status:       "active",
 		}
 

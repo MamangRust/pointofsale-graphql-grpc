@@ -7,118 +7,155 @@ package graph
 import (
 	"context"
 
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/model"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
-	orderitem_errors "github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/order_item_errors"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 )
 
 // FindAllOrderItem is the resolver for the findAllOrderItem field.
 func (r *queryResolver) FindAllOrderItem(ctx context.Context, input model.FindAllOrderItemInput) (*model.APIResponsePaginationOrderItem, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindAllOrderItem", ctx, func(ctx context.Context) (*model.APIResponsePaginationOrderItem, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllOrderItemInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllOrderItemRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.OrderItemGraphql.Cache.GetCachedOrderItemsAll(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	orderItems, err := r.OrderItemGraphql.OrderItemClient.FindAll(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllOrderItemRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		orderItems, err := r.OrderItemGraphql.OrderItemClient.FindAll(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindAllOrderItem")
+		}
 
-	so := r.OrderItemGraphql.Mapping.ToGraphqlResponsePaginationOrderItem(orderItems)
+		so := r.OrderItemGraphql.Mapping.ToGraphqlResponsePaginationOrderItem(orderItems)
 
-	return so, nil
+		r.OrderItemGraphql.Cache.SetCachedOrderItemsAll(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByActiveOrderItem is the resolver for the findByActiveOrderItem field.
 func (r *queryResolver) FindByActiveOrderItem(ctx context.Context, input model.FindAllOrderItemInput) (*model.APIResponsePaginationOrderItemDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByActiveOrderItem", ctx, func(ctx context.Context) (*model.APIResponsePaginationOrderItemDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllOrderItemInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllOrderItemRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.OrderItemGraphql.Cache.GetCachedOrderItemActive(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	orderItems, err := r.OrderItemGraphql.OrderItemClient.FindByActive(ctx, req)
+		req := &pb.FindAllOrderItemRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		orderItems, err := r.OrderItemGraphql.OrderItemClient.FindByActive(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByActiveOrderItem")
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.OrderItemGraphql.Mapping.ToGraphqlResponsePaginationOrderItemDeleteAt(orderItems)
 
-	so := r.OrderItemGraphql.Mapping.ToGraphqlResponsePaginationOrderItemDeleteAt(orderItems)
+		r.OrderItemGraphql.Cache.SetCachedOrderItemActive(ctx, normalizedInput, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindByTrashedOrderItem is the resolver for the findByTrashedOrderItem field.
 func (r *queryResolver) FindByTrashedOrderItem(ctx context.Context, input model.FindAllOrderItemInput) (*model.APIResponsePaginationOrderItemDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByTrashedOrderItem", ctx, func(ctx context.Context) (*model.APIResponsePaginationOrderItemDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllOrderItemInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllOrderItemRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.OrderItemGraphql.Cache.GetCachedOrderItemTrashed(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	orderItems, err := r.OrderItemGraphql.OrderItemClient.FindByTrashed(ctx, req)
+		req := &pb.FindAllOrderItemRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		orderItems, err := r.OrderItemGraphql.OrderItemClient.FindByTrashed(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByTrashedOrderItem")
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.OrderItemGraphql.Mapping.ToGraphqlResponsePaginationOrderItemDeleteAt(orderItems)
 
-	so := r.OrderItemGraphql.Mapping.ToGraphqlResponsePaginationOrderItemDeleteAt(orderItems)
+		r.OrderItemGraphql.Cache.SetCachedOrderItemTrashed(ctx, normalizedInput, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindOrderItemByOrder is the resolver for the findOrderItemByOrder field.
 func (r *queryResolver) FindOrderItemByOrder(ctx context.Context, input model.FindByIDOrderItemInput) (*model.APIResponsesOrderItem, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "FindOrderItemByOrder", ctx, func(ctx context.Context) (*model.APIResponsesOrderItem, error) {
+		id := int(input.ID)
 
-	if id <= 0 {
-		return nil, orderitem_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.OrderItemGraphql.OrderItemClient.FindOrderItemByOrder(ctx, &pb.FindByIdOrderItemRequest{
-		Id: id,
+		if cached, found := r.OrderItemGraphql.Cache.GetCachedOrderItems(ctx, id); found {
+			return cached, nil
+		}
+
+		res, err := r.OrderItemGraphql.OrderItemClient.FindOrderItemByOrder(ctx, &pb.FindByIdOrderItemRequest{
+			Id: int32(id),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindOrderItemByOrder")
+		}
+
+		so := r.OrderItemGraphql.Mapping.ToGraphqlResponsesOrderItem(res)
+
+		r.OrderItemGraphql.Cache.SetCachedOrderItems(ctx, so)
+
+		return so, nil
 	})
-
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.OrderItemGraphql.Mapping.ToGraphqlResponsesOrderItem(res)
-
-	return so, nil
 }

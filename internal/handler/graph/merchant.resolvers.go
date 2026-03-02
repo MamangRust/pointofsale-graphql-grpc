@@ -7,246 +7,352 @@ package graph
 import (
 	"context"
 
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
+	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/model"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
-	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/merchant_errors"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // CreateMerchant is the resolver for the createMerchant field.
 func (r *mutationResolver) CreateMerchant(ctx context.Context, input model.CreateMerchantInput) (*model.APIResponseMerchant, error) {
-	req := &pb.CreateMerchantRequest{
-		UserId:       int32(input.UserID),
-		Name:         input.Name,
-		Description:  *input.Description,
-		Address:      *input.Address,
-		ContactEmail: *input.ContactEmail,
-		ContactPhone: *input.ContactPhone,
-		Status:       *input.Status,
-	}
+	return ResolverHandle(r.ResolverHandle, "CreateMerchant", ctx, func(ctx context.Context) (*model.APIResponseMerchant, error) {
+		req := &requests.CreateMerchantRequest{
+			UserID:       int(input.UserID),
+			Name:         input.Name,
+			Description:  *input.Description,
+			Address:      *input.Address,
+			ContactEmail: *input.ContactEmail,
+			ContactPhone: *input.ContactPhone,
+			Status:       *input.Status,
+		}
 
-	merchant, err := r.MerchantGraphql.MerchantClient.Create(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchant(merchant)
+		reqPb := &pb.CreateMerchantRequest{
+			UserId:       int32(req.UserID),
+			Name:         req.Name,
+			Description:  req.Description,
+			Address:      req.Address,
+			ContactEmail: req.ContactEmail,
+			ContactPhone: req.ContactPhone,
+			Status:       req.Status,
+		}
 
-	return so, nil
+		merchant, err := r.MerchantGraphql.MerchantClient.Create(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "CreateMerchant")
+		}
+
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchant(merchant)
+
+		r.MerchantGraphql.Cache.DeleteCachedMerchant(ctx, int(so.Data.ID))
+
+		return so, nil
+	})
 }
 
 // UpdateMerchant is the resolver for the updateMerchant field.
 func (r *mutationResolver) UpdateMerchant(ctx context.Context, input model.UpdateMerchantInput) (*model.APIResponseMerchant, error) {
-	id := int32(input.MerchantID)
+	return ResolverHandle(r.ResolverHandle, "UpdateMerchant", ctx, func(ctx context.Context) (*model.APIResponseMerchant, error) {
+		id := int(input.MerchantID)
 
-	if id <= 0 {
-		return nil, merchant_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	req := &pb.UpdateMerchantRequest{
-		MerchantId:   id,
-		UserId:       int32(*input.UserID),
-		Name:         *input.Name,
-		Description:  *input.Description,
-		Address:      *input.Address,
-		ContactEmail: *input.ContactEmail,
-		ContactPhone: *input.ContactPhone,
-		Status:       *input.Status,
-	}
+		req := &requests.UpdateMerchantRequest{
+			MerchantID:   &id,
+			UserID:       int(*input.UserID),
+			Name:         *input.Name,
+			Description:  *input.Description,
+			Address:      *input.Address,
+			ContactEmail: *input.ContactEmail,
+			ContactPhone: *input.ContactPhone,
+			Status:       *input.Status,
+		}
 
-	merchant, err := r.MerchantGraphql.MerchantClient.Update(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchant(merchant)
+		reqPb := &pb.UpdateMerchantRequest{
+			MerchantId:   int32(id),
+			UserId:       int32(req.UserID),
+			Name:         req.Name,
+			Description:  req.Description,
+			Address:      req.Address,
+			ContactEmail: req.ContactEmail,
+			ContactPhone: req.ContactPhone,
+			Status:       req.Status,
+		}
 
-	return so, nil
+		merchant, err := r.MerchantGraphql.MerchantClient.Update(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "UpdateMerchant")
+		}
+
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchant(merchant)
+
+		r.MerchantGraphql.Cache.DeleteCachedMerchant(ctx, id)
+
+		return so, nil
+	})
 }
 
 // TrashedMerchant is the resolver for the trashedMerchant field.
 func (r *mutationResolver) TrashedMerchant(ctx context.Context, input model.FindByIDMerchantInput) (*model.APIResponseMerchantDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "TrashedMerchant", ctx, func(ctx context.Context) (*model.APIResponseMerchantDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, merchant_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	merchant, err := r.MerchantGraphql.MerchantClient.TrashedMerchant(ctx, &pb.FindByIdMerchantRequest{})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		reqPb := &pb.FindByIdMerchantRequest{
+			Id: int32(id),
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantDeleteAt(merchant)
+		merchant, err := r.MerchantGraphql.MerchantClient.TrashedMerchant(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "TrashedMerchant")
+		}
 
-	return so, nil
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantDeleteAt(merchant)
+
+		r.MerchantGraphql.Cache.DeleteCachedMerchant(ctx, id)
+
+		return so, nil
+	})
 }
 
 // RestoreMerchant is the resolver for the restoreMerchant field.
 func (r *mutationResolver) RestoreMerchant(ctx context.Context, input model.FindByIDMerchantInput) (*model.APIResponseMerchantDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "RestoreMerchant", ctx, func(ctx context.Context) (*model.APIResponseMerchantDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, merchant_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	merchant, err := r.MerchantGraphql.MerchantClient.RestoreMerchant(ctx, &pb.FindByIdMerchantRequest{
-		Id: id,
+		reqPb := &pb.FindByIdMerchantRequest{
+			Id: int32(id),
+		}
+
+		merchant, err := r.MerchantGraphql.MerchantClient.RestoreMerchant(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreMerchant")
+		}
+
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantDeleteAt(merchant)
+
+		r.MerchantGraphql.Cache.DeleteCachedMerchant(ctx, id)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantDeleteAt(merchant)
-
-	return so, nil
 }
 
 // DeleteMerchantPermanent is the resolver for the deleteMerchantPermanent field.
 func (r *mutationResolver) DeleteMerchantPermanent(ctx context.Context, input model.FindByIDMerchantInput) (*model.APIResponseMerchantDelete, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "DeleteMerchantPermanent", ctx, func(ctx context.Context) (*model.APIResponseMerchantDelete, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, merchant_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.MerchantGraphql.MerchantClient.DeleteMerchantPermanent(ctx, &pb.FindByIdMerchantRequest{Id: id})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		reqPb := &pb.FindByIdMerchantRequest{Id: int32(id)}
+		res, err := r.MerchantGraphql.MerchantClient.DeleteMerchantPermanent(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteMerchantPermanent")
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantDelete(res)
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantDelete(res)
 
-	return so, nil
+		r.MerchantGraphql.Cache.DeleteCachedMerchant(ctx, id)
+
+		return so, nil
+	})
 }
 
 // RestoreAllMerchant is the resolver for the restoreAllMerchant field.
 func (r *mutationResolver) RestoreAllMerchant(ctx context.Context) (*model.APIResponseMerchantAll, error) {
-	res, err := r.MerchantGraphql.MerchantClient.RestoreAllMerchant(ctx, &emptypb.Empty{})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+	return ResolverHandle(r.ResolverHandle, "RestoreAllMerchant", ctx, func(ctx context.Context) (*model.APIResponseMerchantAll, error) {
+		res, err := r.MerchantGraphql.MerchantClient.RestoreAllMerchant(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreAllMerchant")
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantAll(res)
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantAll(res)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // DeleteAllMerchantPermanent is the resolver for the deleteAllMerchantPermanent field.
 func (r *mutationResolver) DeleteAllMerchantPermanent(ctx context.Context) (*model.APIResponseMerchantAll, error) {
-	res, err := r.MerchantGraphql.MerchantClient.DeleteAllMerchantPermanent(ctx, &emptypb.Empty{})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+	return ResolverHandle(r.ResolverHandle, "DeleteAllMerchantPermanent", ctx, func(ctx context.Context) (*model.APIResponseMerchantAll, error) {
+		res, err := r.MerchantGraphql.MerchantClient.DeleteAllMerchantPermanent(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteAllMerchantPermanent")
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantAll(res)
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchantAll(res)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindAllMerchant is the resolver for the findAllMerchant field.
 func (r *queryResolver) FindAllMerchant(ctx context.Context, input model.FindAllMerchantInput) (*model.APIResponsePaginationMerchant, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindAllMerchant", ctx, func(ctx context.Context) (*model.APIResponsePaginationMerchant, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllMerchantInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllMerchantRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.MerchantGraphql.Cache.GetCachedMerchants(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	merchants, err := r.MerchantGraphql.MerchantClient.FindAll(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllMerchantRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		merchants, err := r.MerchantGraphql.MerchantClient.FindAll(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindAllMerchant")
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponsePaginationMerchant(merchants)
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponsePaginationMerchant(merchants)
 
-	return so, nil
+		// 4. Set Cache
+		r.MerchantGraphql.Cache.SetCachedMerchants(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByIDMerchant is the resolver for the findByIdMerchant field.
 func (r *queryResolver) FindByIDMerchant(ctx context.Context, input model.FindByIDMerchantInput) (*model.APIResponseMerchant, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "FindByIDMerchant", ctx, func(ctx context.Context) (*model.APIResponseMerchant, error) {
+		id := int(input.ID)
 
-	if id <= 0 {
-		return nil, merchant_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.MerchantGraphql.MerchantClient.FindById(ctx, &pb.FindByIdMerchantRequest{Id: id})
+		if cached, found := r.MerchantGraphql.Cache.GetCachedMerchant(ctx, id); found {
+			return cached, nil
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		res, err := r.MerchantGraphql.MerchantClient.FindById(ctx, &pb.FindByIdMerchantRequest{Id: int32(id)})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByIDMerchant")
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchant(res)
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponseMerchant(res)
 
-	return so, nil
+		// 4. Set Cache
+		r.MerchantGraphql.Cache.SetCachedMerchant(ctx, so)
+
+		return so, nil
+	})
 }
 
 // FindByActiveMerchant is the resolver for the findByActiveMerchant field.
 func (r *queryResolver) FindByActiveMerchant(ctx context.Context, input model.FindAllMerchantInput) (*model.APIResponsePaginationMerchantDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByActiveMerchant", ctx, func(ctx context.Context) (*model.APIResponsePaginationMerchantDeleteAt, error) {
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	req := &pb.FindAllMerchantRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		normalizedInput := &model.FindAllMerchantInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	merchants, err := r.MerchantGraphql.MerchantClient.FindByActive(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		if cached, found := r.MerchantGraphql.Cache.GetCachedMerchantActive(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponsePaginationMerchantDeleteAt(merchants)
+		req := &pb.FindAllMerchantRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		merchants, err := r.MerchantGraphql.MerchantClient.FindByActive(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByActiveMerchant")
+		}
 
-	return so, nil
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponsePaginationMerchantDeleteAt(merchants)
+
+		// 4. Set Cache
+		r.MerchantGraphql.Cache.SetCachedMerchantActive(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByTrashedMerchant is the resolver for the findByTrashedMerchant field.
 func (r *queryResolver) FindByTrashedMerchant(ctx context.Context, input model.FindAllMerchantInput) (*model.APIResponsePaginationMerchantDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByTrashedMerchant", ctx, func(ctx context.Context) (*model.APIResponsePaginationMerchantDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllMerchantInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllMerchantRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.MerchantGraphql.Cache.GetCachedMerchantTrashed(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	merchants, err := r.MerchantGraphql.MerchantClient.FindByTrashed(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllMerchantRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		merchants, err := r.MerchantGraphql.MerchantClient.FindByTrashed(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByTrashedMerchant")
+		}
 
-	so := r.MerchantGraphql.Mapping.ToGraphqlResponsePaginationMerchantDeleteAt(merchants)
+		so := r.MerchantGraphql.Mapping.ToGraphqlResponsePaginationMerchantDeleteAt(merchants)
 
-	return so, nil
+		r.MerchantGraphql.Cache.SetCachedMerchantTrashed(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }

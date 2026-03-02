@@ -12,396 +12,522 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
+	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/model"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
-	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/product_errors"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // CreateProduct is the resolver for the createProduct field.
 func (r *mutationResolver) CreateProduct(ctx context.Context, input model.CreateProductInput) (*model.APIResponseProduct, error) {
-	var imagePath string
+	return ResolverHandle(r.ResolverHandle, "CreateProduct", ctx, func(ctx context.Context) (*model.APIResponseProduct, error) {
+		var imagePath string
 
-	if input.Image.Filename != "" && input.Image.ContentType != "" {
-		upload := input.Image.File
-		ext := filepath.Ext(input.Image.Filename)
-		filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-		imagePath = filepath.Join("uploads/products", filename)
+		if input.Image.Filename != "" && input.Image.ContentType != "" {
+			upload := input.Image.File
+			ext := filepath.Ext(input.Image.Filename)
+			filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+			imagePath = filepath.Join("uploads/products", filename)
 
-		if err := r.ProductGraphql.ImageUpload.EnsureUploadDirectory("uploads/products"); err != nil {
-			return nil, fmt.Errorf("failed to create upload directory: %w", err)
+			if err := r.ProductGraphql.ImageUpload.EnsureUploadDirectory("uploads/products"); err != nil {
+				return nil, r.handleGraphQLError(err, "CreateProduct")
+			}
+
+			out, err := os.Create(imagePath)
+			if err != nil {
+				return nil, r.handleGraphQLError(err, "CreateProduct")
+			}
+			defer out.Close()
+
+			if _, err := io.Copy(out, upload); err != nil {
+				r.ProductGraphql.ImageUpload.CleanupImageOnFailure(imagePath)
+				return nil, r.handleGraphQLError(err, "CreateProduct")
+			}
 		}
 
-		out, err := os.Create(imagePath)
+		req := &requests.CreateProductRequest{
+			MerchantID:   int(input.MerchantID),
+			CategoryID:   int(input.CategoryID),
+			Name:         input.Name,
+			Description:  *input.Description,
+			Price:        int(input.Price),
+			CountInStock: int(input.CountInStock),
+			Brand:        *input.Brand,
+			Weight:       int(*input.Weight),
+			ImageProduct: imagePath,
+		}
+
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
+
+		reqPb := &pb.CreateProductRequest{
+			MerchantId:   int32(req.MerchantID),
+			CategoryId:   int32(req.CategoryID),
+			Name:         req.Name,
+			Description:  req.Description,
+			Price:        int32(req.Price),
+			CountInStock: int32(req.CountInStock),
+			Brand:        req.Brand,
+			Weight:       int32(req.Weight),
+			ImageProduct: req.ImageProduct,
+		}
+
+		product, err := r.ProductGraphql.ProductClient.Create(ctx, reqPb)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create image file: %w", err)
+			return nil, r.handleGraphQLError(err, "CreateProduct")
 		}
-		defer out.Close()
 
-		if _, err := io.Copy(out, upload); err != nil {
-			r.ProductGraphql.ImageUpload.CleanupImageOnFailure(imagePath)
-			return nil, fmt.Errorf("failed to save uploaded image: %w", err)
-		}
-	}
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProduct(product)
 
-	req := &pb.CreateProductRequest{
-		MerchantId:   int32(input.MerchantID),
-		CategoryId:   int32(input.CategoryID),
-		Name:         input.Name,
-		Description:  *input.Description,
-		Price:        int32(input.Price),
-		CountInStock: int32(input.CountInStock),
-		Brand:        *input.Brand,
-		Weight:       int32(*input.Weight),
-		ImageProduct: imagePath,
-	}
+		r.ProductGraphql.Cache.DeleteCachedProduct(ctx, int(so.Data.ID))
 
-	product, err := r.ProductGraphql.ProductClient.Create(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProduct(product)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // UpdateProduct is the resolver for the updateProduct field.
 func (r *mutationResolver) UpdateProduct(ctx context.Context, input model.UpdateProductInput) (*model.APIResponseProduct, error) {
-	var imagePath string
+	return ResolverHandle(r.ResolverHandle, "UpdateProduct", ctx, func(ctx context.Context) (*model.APIResponseProduct, error) {
+		id := int(input.ProductID)
 
-	if input.Image != nil && input.Image.Filename != "" {
-		upload := input.Image.File
-		ext := filepath.Ext(input.Image.Filename)
-		filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-		imagePath = filepath.Join("uploads/products", filename)
-
-		if err := r.ProductGraphql.ImageUpload.EnsureUploadDirectory("uploads/products"); err != nil {
-			return nil, fmt.Errorf("failed to create upload directory: %w", err)
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
 		}
 
-		out, err := os.Create(imagePath)
+		var imagePath string
+
+		if input.Image != nil && input.Image.Filename != "" {
+			upload := input.Image.File
+			ext := filepath.Ext(input.Image.Filename)
+			filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+			imagePath = filepath.Join("uploads/products", filename)
+
+			if err := r.ProductGraphql.ImageUpload.EnsureUploadDirectory("uploads/products"); err != nil {
+				return nil, r.handleGraphQLError(err, "UpdateProduct")
+			}
+
+			out, err := os.Create(imagePath)
+			if err != nil {
+				return nil, r.handleGraphQLError(err, "UpdateProduct")
+			}
+			defer out.Close()
+
+			if _, err := io.Copy(out, upload); err != nil {
+				r.ProductGraphql.ImageUpload.CleanupImageOnFailure(imagePath)
+				return nil, r.handleGraphQLError(err, "UpdateProduct")
+			}
+		}
+
+		// 1. Mapping Input ke Internal Request
+		req := &requests.UpdateProductRequest{
+			ProductID:    &id,
+			MerchantID:   int(input.MerchantID),
+			CategoryID:   int(input.CategoryID),
+			Name:         *input.Name,
+			Description:  *input.Description,
+			Price:        int(*input.Price),
+			CountInStock: int(*input.CountInStock),
+			Brand:        *input.Brand,
+			Weight:       int(*input.Weight),
+		}
+		if imagePath != "" {
+			req.ImageProduct = imagePath
+		}
+
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
+
+		reqPb := &pb.UpdateProductRequest{
+			ProductId:    int32(id),
+			MerchantId:   int32(req.MerchantID),
+			CategoryId:   int32(req.CategoryID),
+			Name:         req.Name,
+			Description:  req.Description,
+			Price:        int32(req.Price),
+			CountInStock: int32(req.CountInStock),
+			Brand:        req.Brand,
+			Weight:       int32(req.Weight),
+			ImageProduct: req.ImageProduct,
+		}
+
+		product, err := r.ProductGraphql.ProductClient.Update(ctx, reqPb)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create image file: %w", err)
+			return nil, r.handleGraphQLError(err, "UpdateProduct")
 		}
-		defer out.Close()
 
-		if _, err := io.Copy(out, upload); err != nil {
-			r.ProductGraphql.ImageUpload.CleanupImageOnFailure(imagePath)
-			return nil, fmt.Errorf("failed to save uploaded image: %w", err)
-		}
-	}
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProduct(product)
 
-	id := int32(input.ProductID)
-	if id <= 0 {
-		return nil, fmt.Errorf("invalid product ID")
-	}
+		r.ProductGraphql.Cache.DeleteCachedProduct(ctx, id)
 
-	req := &pb.UpdateProductRequest{
-		ProductId:    id,
-		MerchantId:   int32(input.MerchantID),
-		CategoryId:   int32(input.CategoryID),
-		Name:         *input.Name,
-		Description:  *input.Description,
-		Price:        int32(*input.Price),
-		CountInStock: int32(*input.CountInStock),
-		Brand:        *input.Brand,
-		Weight:       int32(*input.Weight),
-	}
-
-	if imagePath != "" {
-		req.ImageProduct = imagePath
-	}
-
-	product, err := r.ProductGraphql.ProductClient.Update(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProduct(product)
-	return so, nil
+		return so, nil
+	})
 }
 
 // TrashedProduct is the resolver for the trashedProduct field.
 func (r *mutationResolver) TrashedProduct(ctx context.Context, input model.FindByIDProductInput) (*model.APIResponseProductDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "TrashedProduct", ctx, func(ctx context.Context) (*model.APIResponseProductDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, product_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	product, err := r.ProductGraphql.ProductClient.TrashedProduct(ctx, &pb.FindByIdProductRequest{
-		Id: id,
+		reqPb := &pb.FindByIdProductRequest{
+			Id: int32(id),
+		}
+
+		product, err := r.ProductGraphql.ProductClient.TrashedProduct(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "TrashedProduct")
+		}
+
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProductDeleteAt(product)
+
+		r.ProductGraphql.Cache.DeleteCachedProduct(ctx, id)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProductDeleteAt(
-		product,
-	)
-
-	return so, nil
 }
 
 // RestoreProduct is the resolver for the restoreProduct field.
 func (r *mutationResolver) RestoreProduct(ctx context.Context, input model.FindByIDProductInput) (*model.APIResponseProductDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "RestoreProduct", ctx, func(ctx context.Context) (*model.APIResponseProductDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, product_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	product, err := r.ProductGraphql.ProductClient.RestoreProduct(ctx, &pb.FindByIdProductRequest{
-		Id: id,
+		reqPb := &pb.FindByIdProductRequest{
+			Id: int32(id),
+		}
+
+		product, err := r.ProductGraphql.ProductClient.RestoreProduct(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreProduct")
+		}
+
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProductDeleteAt(product)
+
+		r.ProductGraphql.Cache.DeleteCachedProduct(ctx, id)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProductDeleteAt(
-		product,
-	)
-
-	return so, nil
 }
 
 // DeleteProductPermanent is the resolver for the deleteProductPermanent field.
 func (r *mutationResolver) DeleteProductPermanent(ctx context.Context, input model.FindByIDProductInput) (*model.APIResponseProductDelete, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "DeleteProductPermanent", ctx, func(ctx context.Context) (*model.APIResponseProductDelete, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, product_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.ProductGraphql.ProductClient.DeleteProductPermanent(ctx, &pb.FindByIdProductRequest{
-		Id: id,
+		reqPb := &pb.FindByIdProductRequest{
+			Id: int32(id),
+		}
+
+		res, err := r.ProductGraphql.ProductClient.DeleteProductPermanent(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteProductPermanent")
+		}
+
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProductDelete(res)
+
+		r.ProductGraphql.Cache.DeleteCachedProduct(ctx, id)
+
+		return so, nil
 	})
-
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProductDelete(res)
-
-	return so, nil
 }
 
 // RestoreAllProduct is the resolver for the restoreAllProduct field.
 func (r *mutationResolver) RestoreAllProduct(ctx context.Context) (*model.APIResponseProductAll, error) {
-	res, err := r.ProductGraphql.ProductClient.RestoreAllProduct(ctx, &emptypb.Empty{})
+	return ResolverHandle(r.ResolverHandle, "RestoreAllProduct", ctx, func(ctx context.Context) (*model.APIResponseProductAll, error) {
+		res, err := r.ProductGraphql.ProductClient.RestoreAllProduct(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreAllProduct")
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProductAll(res)
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProductAll(res)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // DeleteAllProductPermanent is the resolver for the deleteAllProductPermanent field.
 func (r *mutationResolver) DeleteAllProductPermanent(ctx context.Context) (*model.APIResponseProductAll, error) {
-	res, err := r.ProductGraphql.ProductClient.DeleteAllProductPermanent(ctx, &emptypb.Empty{})
+	return ResolverHandle(r.ResolverHandle, "DeleteAllProductPermanent", ctx, func(ctx context.Context) (*model.APIResponseProductAll, error) {
+		res, err := r.ProductGraphql.ProductClient.DeleteAllProductPermanent(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteAllProductPermanent")
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProductAll(res)
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProductAll(res)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindAllProduct is the resolver for the findAllProduct field.
 func (r *queryResolver) FindAllProduct(ctx context.Context, input *model.FindAllProductInput) (*model.APIResponsePaginationProduct, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindAllProduct", ctx, func(ctx context.Context) (*model.APIResponsePaginationProduct, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllProductInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllProductRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.ProductGraphql.Cache.GetCachedProducts(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	products, err := r.ProductGraphql.ProductClient.FindAll(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllProductRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		products, err := r.ProductGraphql.ProductClient.FindAll(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindAllProduct")
+		}
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProduct(products)
+		so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProduct(products)
 
-	return so, nil
+		r.ProductGraphql.Cache.SetCachedProducts(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByMerchantProduct is the resolver for the findByMerchantProduct field.
 func (r *queryResolver) FindByMerchantProduct(ctx context.Context, input model.FindAllProductMerchantInput) (*model.APIResponsePaginationProduct, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
-	merchantId := int32(input.MerchantID)
-	min_price := int32(*input.MinPrice)
-	max_price := int32(*input.MaxPrice)
+	return ResolverHandle(r.ResolverHandle, "FindByMerchantProduct", ctx, func(ctx context.Context) (*model.APIResponsePaginationProduct, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		min_price := int32(*input.MinPrice)
+		max_price := int32(*input.MaxPrice)
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if min_price <= 0 {
-		min_price = 0
-	}
+		if min_price <= 0 {
+			min_price = 0
+		}
+		if max_price <= 0 {
+			max_price = 0
+		}
 
-	if max_price <= 0 {
-		max_price = 0
-	}
+		normalizedInput := &model.FindAllProductMerchantInput{
+			Page:       &page,
+			PageSize:   &pageSize,
+			Search:     input.Search,
+			MinPrice:   &min_price,
+			MaxPrice:   &max_price,
+			MerchantID: input.MerchantID,
+		}
 
-	req := &pb.FindAllProductMerchantRequest{
-		Page:       page,
-		PageSize:   pageSize,
-		Search:     *search,
-		MinPrice:   min_price,
-		MaxPrice:   max_price,
-		MerchantId: merchantId,
-	}
+		if cached, found := r.ProductGraphql.Cache.GetCachedProductsByMerchant(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	products, err := r.ProductGraphql.ProductClient.FindByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllProductMerchantRequest{
+			Page:       int32(page),
+			PageSize:   int32(pageSize),
+			Search:     *input.Search,
+			MinPrice:   int32(min_price),
+			MaxPrice:   int32(max_price),
+			MerchantId: int32(input.MerchantID),
+		}
+		products, err := r.ProductGraphql.ProductClient.FindByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByMerchantProduct")
+		}
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProduct(products)
+		so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProduct(products)
 
-	return so, nil
+		r.ProductGraphql.Cache.SetCachedProductsByMerchant(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByCategoryProduct is the resolver for the findByCategoryProduct field.
 func (r *queryResolver) FindByCategoryProduct(ctx context.Context, input model.FindAllProductCategoryInput) (*model.APIResponsePaginationProduct, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
-	categoryName := input.CategoryName
-	min_price := int32(*input.MinPrice)
-	max_price := int32(*input.MaxPrice)
+	return ResolverHandle(r.ResolverHandle, "FindByCategoryProduct", ctx, func(ctx context.Context) (*model.APIResponsePaginationProduct, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		min_price := int32(*input.MinPrice)
+		max_price := int32(*input.MaxPrice)
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if min_price <= 0 {
-		min_price = 0
-	}
+		if min_price <= 0 {
+			min_price = 0
+		}
+		if max_price <= 0 {
+			max_price = 0
+		}
 
-	if max_price <= 0 {
-		max_price = 0
-	}
+		normalizedInput := &model.FindAllProductCategoryInput{
+			Page:         &page,
+			PageSize:     &pageSize,
+			Search:       input.Search,
+			MinPrice:     &min_price,
+			MaxPrice:     &max_price,
+			CategoryName: input.CategoryName,
+		}
 
-	req := &pb.FindAllProductCategoryRequest{
-		Page:         page,
-		PageSize:     pageSize,
-		Search:       *search,
-		Minprice:     min_price,
-		Maxprice:     max_price,
-		CategoryName: *categoryName,
-	}
+		if cached, found := r.ProductGraphql.Cache.GetCachedProductsByCategory(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	products, err := r.ProductGraphql.ProductClient.FindByCategory(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllProductCategoryRequest{
+			Page:         int32(page),
+			PageSize:     int32(pageSize),
+			Search:       *input.Search,
+			Minprice:     int32(min_price),
+			Maxprice:     int32(max_price),
+			CategoryName: *input.CategoryName,
+		}
+		products, err := r.ProductGraphql.ProductClient.FindByCategory(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByCategoryProduct")
+		}
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProduct(products)
+		so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProduct(products)
 
-	return so, nil
+		r.ProductGraphql.Cache.SetCachedProductsByCategory(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByIDProduct is the resolver for the findByIdProduct field.
 func (r *queryResolver) FindByIDProduct(ctx context.Context, input model.FindByIDProductInput) (*model.APIResponseProduct, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "FindByIDProduct", ctx, func(ctx context.Context) (*model.APIResponseProduct, error) {
+		id := int(input.ID)
 
-	if id <= 0 {
-		return nil, product_errors.ErrGraphqlInvalidID
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.ProductGraphql.ProductClient.FindById(ctx, &pb.FindByIdProductRequest{Id: id})
+		if cached, found := r.ProductGraphql.Cache.GetCachedProduct(ctx, id); found {
+			return cached, nil
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		res, err := r.ProductGraphql.ProductClient.FindById(ctx, &pb.FindByIdProductRequest{Id: int32(id)})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByIDProduct")
+		}
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponseProduct(res)
+		so := r.ProductGraphql.Mapping.ToGraphqlResponseProduct(res)
 
-	return so, nil
+		r.ProductGraphql.Cache.SetCachedProduct(ctx, so)
+
+		return so, nil
+	})
 }
 
 // FindByActiveProduct is the resolver for the findByActiveProduct field.
 func (r *queryResolver) FindByActiveProduct(ctx context.Context, input *model.FindAllProductInput) (*model.APIResponsePaginationProductDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByActiveProduct", ctx, func(ctx context.Context) (*model.APIResponsePaginationProductDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllProductInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllProductRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.ProductGraphql.Cache.GetCachedProductActive(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	products, err := r.ProductGraphql.ProductClient.FindByActive(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllProductRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		products, err := r.ProductGraphql.ProductClient.FindByActive(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByActiveProduct")
+		}
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProductDeleteAt(products)
+		so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProductDeleteAt(products)
 
-	return so, nil
+		r.ProductGraphql.Cache.SetCachedProductActive(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByTrashedProduct is the resolver for the findByTrashedProduct field.
 func (r *queryResolver) FindByTrashedProduct(ctx context.Context, input *model.FindAllProductInput) (*model.APIResponsePaginationProductDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindByTrashedProduct", ctx, func(ctx context.Context) (*model.APIResponsePaginationProductDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllProductInput{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllProductRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.ProductGraphql.Cache.GetCachedProductTrashed(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	products, err := r.ProductGraphql.ProductClient.FindByTrashed(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllProductRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		products, err := r.ProductGraphql.ProductClient.FindByTrashed(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByTrashedProduct")
+		}
 
-	so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProductDeleteAt(products)
+		so := r.ProductGraphql.Mapping.ToGraphqlResponsePaginationProductDeleteAt(products)
 
-	return so, nil
+		r.ProductGraphql.Cache.SetCachedProductTrashed(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }

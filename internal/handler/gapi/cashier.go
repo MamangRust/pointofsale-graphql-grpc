@@ -5,28 +5,25 @@ import (
 	"math"
 
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
-	protomapper "github.com/MamangRust/pointofsale-graphql-grpc/internal/mapper/proto"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/service"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/cashier_errors"
 
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type cashierHandleGrpc struct {
 	pb.UnimplementedCashierServiceServer
 	cashierService service.CashierService
-	mapping        protomapper.CashierProtoMapper
 }
 
 func NewCashierHandleGrpc(
 	cashierService service.CashierService,
-	mapping protomapper.CashierProtoMapper,
 ) *cashierHandleGrpc {
 	return &cashierHandleGrpc{
 		cashierService: cashierService,
-		mapping:        mapping,
 	}
 }
 
@@ -48,10 +45,9 @@ func (s *cashierHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllCash
 		PageSize: pageSize,
 	}
 
-	cashier, totalRecords, err := s.cashierService.FindAll(&reqService)
-
+	cashiers, totalRecords, err := s.cashierService.FindAllCashiers(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -63,8 +59,23 @@ func (s *cashierHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllCash
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationCashier(paginationMeta, "success", "Successfully fetched cashier", cashier)
-	return so, nil
+	var cashierResponses []*pb.CashierResponse
+	for _, cashier := range cashiers {
+		cashierResponses = append(cashierResponses, &pb.CashierResponse{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+		})
+	}
+
+	return &pb.ApiResponsePaginationCashier{
+		Status:     "success",
+		Message:    "Successfully fetched cashier",
+		Data:       cashierResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdCashierRequest) (*pb.ApiResponseCashier, error) {
@@ -74,15 +85,22 @@ func (s *cashierHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdCa
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	cashier, err := s.cashierService.FindById(id)
-
+	cashier, err := s.cashierService.FindById(ctx, id)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashier("success", "Successfully fetched categories", cashier)
-
-	return so, nil
+	return &pb.ApiResponseCashier{
+		Status:  "success",
+		Message: "Successfully fetched cashier",
+		Data: &pb.CashierResponse{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+		},
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAllCashierRequest) (*pb.ApiResponsePaginationCashierDeleteAt, error) {
@@ -103,10 +121,9 @@ func (s *cashierHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAl
 		PageSize: pageSize,
 	}
 
-	cashier, totalRecords, err := s.cashierService.FindByActive(&reqService)
-
+	cashiers, totalRecords, err := s.cashierService.FindByActive(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -118,9 +135,29 @@ func (s *cashierHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAl
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationCashierDeleteAt(paginationMeta, "success", "Successfully fetched active cashier", cashier)
+	var cashierResponses []*pb.CashierResponseDeleteAt
+	for _, cashier := range cashiers {
+		var deletedAt string
+		if cashier.DeletedAt.Valid {
+			deletedAt = cashier.DeletedAt.Time.String()
+		}
 
-	return so, nil
+		cashierResponses = append(cashierResponses, &pb.CashierResponseDeleteAt{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: deletedAt},
+		})
+	}
+
+	return &pb.ApiResponsePaginationCashierDeleteAt{
+		Status:     "success",
+		Message:    "Successfully fetched active cashier",
+		Data:       cashierResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindAllCashierRequest) (*pb.ApiResponsePaginationCashierDeleteAt, error) {
@@ -141,10 +178,9 @@ func (s *cashierHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindA
 		PageSize: pageSize,
 	}
 
-	users, totalRecords, err := s.cashierService.FindByTrashed(&reqService)
-
+	cashiers, totalRecords, err := s.cashierService.FindByTrashed(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -156,9 +192,29 @@ func (s *cashierHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindA
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationCashierDeleteAt(paginationMeta, "success", "Successfully fetched trashed cashier", users)
+	var cashierResponses []*pb.CashierResponseDeleteAt
+	for _, cashier := range cashiers {
+		var deletedAt string
+		if cashier.DeletedAt.Valid {
+			deletedAt = cashier.DeletedAt.Time.String()
+		}
 
-	return so, nil
+		cashierResponses = append(cashierResponses, &pb.CashierResponseDeleteAt{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: deletedAt},
+		})
+	}
+
+	return &pb.ApiResponsePaginationCashierDeleteAt{
+		Status:     "success",
+		Message:    "Successfully fetched trashed cashier",
+		Data:       cashierResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindByMerchant(ctx context.Context, request *pb.FindByMerchantCashierRequest) (*pb.ApiResponsePaginationCashier, error) {
@@ -185,10 +241,9 @@ func (s *cashierHandleGrpc) FindByMerchant(ctx context.Context, request *pb.Find
 		MerchantID: merchant_id,
 	}
 
-	cashier, totalRecords, err := s.cashierService.FindByMerchant(&reqService)
-
+	cashiers, totalRecords, err := s.cashierService.FindByMerchant(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -200,8 +255,23 @@ func (s *cashierHandleGrpc) FindByMerchant(ctx context.Context, request *pb.Find
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationCashier(paginationMeta, "success", "Successfully fetched cashier", cashier)
-	return so, nil
+	var cashierResponses []*pb.CashierResponse
+	for _, cashier := range cashiers {
+		cashierResponses = append(cashierResponses, &pb.CashierResponse{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+		})
+	}
+
+	return &pb.ApiResponsePaginationCashier{
+		Status:     "success",
+		Message:    "Successfully fetched cashier",
+		Data:       cashierResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindMonthlyTotalSales(ctx context.Context, req *pb.FindYearMonthTotalSales) (*pb.ApiResponseCashierMonthlyTotalSales, error) {
@@ -221,13 +291,25 @@ func (s *cashierHandleGrpc) FindMonthlyTotalSales(ctx context.Context, req *pb.F
 		Month: month,
 	}
 
-	methods, err := s.cashierService.FindMonthlyTotalSales(&reqService)
-
+	sales, err := s.cashierService.FindMonthlyTotalSales(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoMonthlyTotalSales("success", "Monthly sales retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseMonthTotalSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseMonthTotalSales{
+			Year:       sale.Year,
+			Month:      sale.Month,
+			TotalSales: int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierMonthlyTotalSales{
+		Status:  "success",
+		Message: "Monthly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindYearlyTotalSales(ctx context.Context, req *pb.FindYearTotalSales) (*pb.ApiResponseCashierYearlyTotalSales, error) {
@@ -237,13 +319,24 @@ func (s *cashierHandleGrpc) FindYearlyTotalSales(ctx context.Context, req *pb.Fi
 		return nil, cashier_errors.ErrGrpcFailedInvalidYear
 	}
 
-	methods, err := s.cashierService.FindYearlyTotalSales(year)
-
+	sales, err := s.cashierService.FindYearlyTotalSales(ctx, year)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoYearlyTotalSales("success", "Yearly payment methods retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseYearTotalSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseYearTotalSales{
+			Year:       sale.Year,
+			TotalSales: int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierYearlyTotalSales{
+		Status:  "success",
+		Message: "Yearly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindMonthlyTotalSalesById(ctx context.Context, req *pb.FindYearMonthTotalSalesById) (*pb.ApiResponseCashierMonthlyTotalSales, error) {
@@ -269,13 +362,25 @@ func (s *cashierHandleGrpc) FindMonthlyTotalSalesById(ctx context.Context, req *
 		CashierID: id,
 	}
 
-	methods, err := s.cashierService.FindMonthlyTotalSalesById(&reqService)
-
+	sales, err := s.cashierService.FindMonthlyTotalSalesById(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoMonthlyTotalSales("success", "Monthly sales retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseMonthTotalSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseMonthTotalSales{
+			Year:       sale.Year,
+			Month:      sale.Month,
+			TotalSales: int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierMonthlyTotalSales{
+		Status:  "success",
+		Message: "Monthly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindYearlyTotalSalesById(ctx context.Context, req *pb.FindYearTotalSalesById) (*pb.ApiResponseCashierYearlyTotalSales, error) {
@@ -295,13 +400,24 @@ func (s *cashierHandleGrpc) FindYearlyTotalSalesById(ctx context.Context, req *p
 		CashierID: id,
 	}
 
-	methods, err := s.cashierService.FindYearlyTotalSalesById(&reqService)
-
+	sales, err := s.cashierService.FindYearlyTotalSalesById(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoYearlyTotalSales("success", "Yearly payment methods retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseYearTotalSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseYearTotalSales{
+			Year:       sale.Year,
+			TotalSales: int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierYearlyTotalSales{
+		Status:  "success",
+		Message: "Yearly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindMonthlyTotalSalesByMerchant(ctx context.Context, req *pb.FindYearMonthTotalSalesByMerchant) (*pb.ApiResponseCashierMonthlyTotalSales, error) {
@@ -327,13 +443,25 @@ func (s *cashierHandleGrpc) FindMonthlyTotalSalesByMerchant(ctx context.Context,
 		MerchantID: merchantId,
 	}
 
-	methods, err := s.cashierService.FindMonthlyTotalSalesByMerchant(&reqService)
-
+	sales, err := s.cashierService.FindMonthlyTotalSalesByMerchant(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoMonthlyTotalSales("success", "Monthly sales retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseMonthTotalSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseMonthTotalSales{
+			Year:       sale.Year,
+			Month:      sale.Month,
+			TotalSales: int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierMonthlyTotalSales{
+		Status:  "success",
+		Message: "Monthly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindYearlyTotalSalesByMerchant(ctx context.Context, req *pb.FindYearTotalSalesByMerchant) (*pb.ApiResponseCashierYearlyTotalSales, error) {
@@ -353,13 +481,24 @@ func (s *cashierHandleGrpc) FindYearlyTotalSalesByMerchant(ctx context.Context, 
 		MerchantID: merchantId,
 	}
 
-	methods, err := s.cashierService.FindYearlyTotalSalesByMerchant(&reqService)
-
+	sales, err := s.cashierService.FindYearlyTotalSalesByMerchant(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoYearlyTotalSales("success", "Yearly payment methods retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseYearTotalSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseYearTotalSales{
+			Year:       sale.Year,
+			TotalSales: int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierYearlyTotalSales{
+		Status:  "success",
+		Message: "Yearly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindMonthSales(ctx context.Context, req *pb.FindYearCashier) (*pb.ApiResponseCashierMonthSales, error) {
@@ -369,13 +508,27 @@ func (s *cashierHandleGrpc) FindMonthSales(ctx context.Context, req *pb.FindYear
 		return nil, cashier_errors.ErrGrpcFailedInvalidYear
 	}
 
-	methods, err := s.cashierService.FindMonthlySales(year)
-
+	sales, err := s.cashierService.FindMonthyCashier(ctx, year)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseMonthlyTotalSales("success", "Monthly sales retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseMonthSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseMonthSales{
+			Month:       sale.Month,
+			CashierId:   int32(sale.CashierID),
+			CashierName: sale.CashierName,
+			OrderCount:  int32(sale.OrderCount),
+			TotalSales:  int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierMonthSales{
+		Status:  "success",
+		Message: "Monthly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindYearSales(ctx context.Context, req *pb.FindYearCashier) (*pb.ApiResponseCashierYearSales, error) {
@@ -385,13 +538,27 @@ func (s *cashierHandleGrpc) FindYearSales(ctx context.Context, req *pb.FindYearC
 		return nil, cashier_errors.ErrGrpcFailedInvalidYear
 	}
 
-	methods, err := s.cashierService.FindYearlySales(year)
-
+	sales, err := s.cashierService.FindYearlyCashier(ctx, year)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseYearlyTotalSales("success", "Yearly payment methods retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseYearSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseYearSales{
+			Year:        sale.Year,
+			CashierId:   int32(sale.CashierID),
+			CashierName: sale.CashierName,
+			OrderCount:  int32(sale.OrderCount),
+			TotalSales:  int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierYearSales{
+		Status:  "success",
+		Message: "Yearly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindMonthSalesByMerchant(ctx context.Context, req *pb.FindYearCashierByMerchant) (*pb.ApiResponseCashierMonthSales, error) {
@@ -411,15 +578,27 @@ func (s *cashierHandleGrpc) FindMonthSalesByMerchant(ctx context.Context, req *p
 		MerchantID: merchantId,
 	}
 
-	methods, err := s.cashierService.FindMonthlyCashierByMerchant(
-		&reqService,
-	)
-
+	sales, err := s.cashierService.FindMonthlyCashierByMerchant(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseMonthlyTotalSales("success", "Merchant monthly revenue retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseMonthSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseMonthSales{
+			Month:       sale.Month,
+			CashierId:   int32(sale.CashierID),
+			CashierName: sale.CashierName,
+			OrderCount:  int32(sale.OrderCount),
+			TotalSales:  int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierMonthSales{
+		Status:  "success",
+		Message: "Merchant monthly revenue retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindYearSalesByMerchant(ctx context.Context, req *pb.FindYearCashierByMerchant) (*pb.ApiResponseCashierYearSales, error) {
@@ -439,15 +618,27 @@ func (s *cashierHandleGrpc) FindYearSalesByMerchant(ctx context.Context, req *pb
 		MerchantID: merchantId,
 	}
 
-	methods, err := s.cashierService.FindYearlyCashierByMerchant(
-		&reqService,
-	)
-
+	sales, err := s.cashierService.FindYearlyCashierByMerchant(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseYearlyTotalSales("success", "Merchant yearly payment methods retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseYearSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseYearSales{
+			Year:        sale.Year,
+			CashierId:   int32(sale.CashierID),
+			CashierName: sale.CashierName,
+			OrderCount:  int32(sale.OrderCount),
+			TotalSales:  int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierYearSales{
+		Status:  "success",
+		Message: "Merchant yearly payment methods retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindMonthSalesById(ctx context.Context, req *pb.FindYearCashierById) (*pb.ApiResponseCashierMonthSales, error) {
@@ -467,15 +658,27 @@ func (s *cashierHandleGrpc) FindMonthSalesById(ctx context.Context, req *pb.Find
 		CashierID: cashierId,
 	}
 
-	methods, err := s.cashierService.FindMonthlyCashierById(
-		&reqService,
-	)
-
+	sales, err := s.cashierService.FindMonthlyCashierById(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseMonthlyTotalSales("success", "Cashier monthly sales retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseMonthSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseMonthSales{
+			Month:       sale.Month,
+			CashierId:   int32(sale.CashierID),
+			CashierName: sale.CashierName,
+			OrderCount:  int32(sale.OrderCount),
+			TotalSales:  int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierMonthSales{
+		Status:  "success",
+		Message: "Cashier monthly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) FindYearSalesById(ctx context.Context, req *pb.FindYearCashierById) (*pb.ApiResponseCashierYearSales, error) {
@@ -495,15 +698,27 @@ func (s *cashierHandleGrpc) FindYearSalesById(ctx context.Context, req *pb.FindY
 		CashierID: cashierId,
 	}
 
-	methods, err := s.cashierService.FindYearlyCashierById(
-		&reqService,
-	)
-
+	sales, err := s.cashierService.FindYearlyCashierById(ctx, &reqService)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseYearlyTotalSales("success", "Cashier yearly sales retrieved successfully", methods), nil
+	var salesResponses []*pb.CashierResponseYearSales
+	for _, sale := range sales {
+		salesResponses = append(salesResponses, &pb.CashierResponseYearSales{
+			Year:        sale.Year,
+			CashierId:   int32(sale.CashierID),
+			CashierName: sale.CashierName,
+			OrderCount:  int32(sale.OrderCount),
+			TotalSales:  int32(sale.TotalSales),
+		})
+	}
+
+	return &pb.ApiResponseCashierYearSales{
+		Status:  "success",
+		Message: "Cashier yearly sales retrieved successfully",
+		Data:    salesResponses,
+	}, nil
 }
 
 func (s *cashierHandleGrpc) CreateCashier(ctx context.Context, request *pb.CreateCashierRequest) (*pb.ApiResponseCashier, error) {
@@ -517,14 +732,22 @@ func (s *cashierHandleGrpc) CreateCashier(ctx context.Context, request *pb.Creat
 		return nil, cashier_errors.ErrGrpcValidateCreateCashier
 	}
 
-	cashier, err := s.cashierService.CreateCashier(req)
-
+	cashier, err := s.cashierService.CreateCashier(ctx, req)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashier("success", "Successfully created cashier", cashier)
-	return so, nil
+	return &pb.ApiResponseCashier{
+		Status:  "success",
+		Message: "Successfully created cashier",
+		Data: &pb.CashierResponse{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+		},
+	}, nil
 }
 
 func (s *cashierHandleGrpc) UpdateCashier(ctx context.Context, request *pb.UpdateCashierRequest) (*pb.ApiResponseCashier, error) {
@@ -543,13 +766,22 @@ func (s *cashierHandleGrpc) UpdateCashier(ctx context.Context, request *pb.Updat
 		return nil, cashier_errors.ErrGrpcValidateUpdateCashier
 	}
 
-	cashier, err := s.cashierService.UpdateCashier(req)
+	cashier, err := s.cashierService.UpdateCashier(ctx, req)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashier("success", "Successfully updated cashier", cashier)
-	return so, nil
+	return &pb.ApiResponseCashier{
+		Status:  "success",
+		Message: "Successfully updated cashier",
+		Data: &pb.CashierResponse{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+		},
+	}, nil
 }
 
 func (s *cashierHandleGrpc) TrashedCashier(ctx context.Context, request *pb.FindByIdCashierRequest) (*pb.ApiResponseCashierDeleteAt, error) {
@@ -559,15 +791,28 @@ func (s *cashierHandleGrpc) TrashedCashier(ctx context.Context, request *pb.Find
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	cashier, err := s.cashierService.TrashedCashier(id)
-
+	cashier, err := s.cashierService.TrashedCashier(ctx, id)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashierDeleteAt("success", "Successfully trashed cashier", cashier)
+	var deletedAt string
+	if cashier.DeletedAt.Valid {
+		deletedAt = cashier.DeletedAt.Time.String()
+	}
 
-	return so, nil
+	return &pb.ApiResponseCashierDeleteAt{
+		Status:  "success",
+		Message: "Successfully trashed cashier",
+		Data: &pb.CashierResponseDeleteAt{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: deletedAt},
+		},
+	}, nil
 }
 
 func (s *cashierHandleGrpc) RestoreCashier(ctx context.Context, request *pb.FindByIdCashierRequest) (*pb.ApiResponseCashierDeleteAt, error) {
@@ -577,15 +822,28 @@ func (s *cashierHandleGrpc) RestoreCashier(ctx context.Context, request *pb.Find
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	cashier, err := s.cashierService.RestoreCashier(id)
-
+	cashier, err := s.cashierService.RestoreCashier(ctx, id)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashierDeleteAt("success", "Successfully restored cashier", cashier)
+	var deletedAt string
+	if cashier.DeletedAt.Valid {
+		deletedAt = cashier.DeletedAt.Time.String()
+	}
 
-	return so, nil
+	return &pb.ApiResponseCashierDeleteAt{
+		Status:  "success",
+		Message: "Successfully restored cashier",
+		Data: &pb.CashierResponseDeleteAt{
+			Id:         int32(cashier.CashierID),
+			MerchantId: int32(cashier.MerchantID),
+			Name:       cashier.Name,
+			CreatedAt:  cashier.CreatedAt.Time.String(),
+			UpdatedAt:  cashier.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: deletedAt},
+		},
+	}, nil
 }
 
 func (s *cashierHandleGrpc) DeleteCashierPermanent(ctx context.Context, request *pb.FindByIdCashierRequest) (*pb.ApiResponseCashierDelete, error) {
@@ -595,37 +853,37 @@ func (s *cashierHandleGrpc) DeleteCashierPermanent(ctx context.Context, request 
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	_, err := s.cashierService.DeleteCashierPermanent(id)
-
+	_, err := s.cashierService.DeleteCashierPermanent(ctx, id)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashierDelete("success", "Successfully deleted cashier permanently")
-
-	return so, nil
+	return &pb.ApiResponseCashierDelete{
+		Status:  "success",
+		Message: "Successfully deleted cashier permanently",
+	}, nil
 }
 
 func (s *cashierHandleGrpc) RestoreAllCashier(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseCashierAll, error) {
-	_, err := s.cashierService.RestoreAllCashier()
-
+	_, err := s.cashierService.RestoreAllCashier(ctx)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashierAll("success", "Successfully restore all cashier")
-
-	return so, nil
+	return &pb.ApiResponseCashierAll{
+		Status:  "success",
+		Message: "Successfully restore all cashier",
+	}, nil
 }
 
 func (s *cashierHandleGrpc) DeleteAllCashierPermanent(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseCashierAll, error) {
-	_, err := s.cashierService.DeleteAllCashierPermanent()
-
+	_, err := s.cashierService.DeleteAllCashierPermanent(ctx)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseCashierAll("success", "Successfully delete cashier permanen")
-
-	return so, nil
+	return &pb.ApiResponseCashierAll{
+		Status:  "success",
+		Message: "Successfully delete cashier permanen",
+	}, nil
 }

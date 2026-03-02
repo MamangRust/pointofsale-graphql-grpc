@@ -1,9 +1,9 @@
 package refreshtoken_errors
 
 import (
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 
 	"google.golang.org/grpc/codes"
 )
 
-var ErrGrpcRefreshToken = response.NewGrpcError("error", "refresh token failed", int(codes.Unauthenticated))
+var ErrGrpcRefreshToken = errors.NewGrpcError("refresh token failed", int(codes.Unauthenticated))

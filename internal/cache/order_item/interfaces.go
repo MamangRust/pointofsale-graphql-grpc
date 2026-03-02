@@ -1,0 +1,22 @@
+package orderitem_cache
+
+import (
+	"context"
+
+	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
+	db "github.com/MamangRust/pointofsale-graphql-grpc/pkg/database/schema"
+)
+
+type OrderItemQueryCache interface {
+	GetCachedOrderItemsAll(ctx context.Context, req *requests.FindAllOrderItems) ([]*db.GetOrderItemsRow, *int, bool)
+	SetCachedOrderItemsAll(ctx context.Context, req *requests.FindAllOrderItems, data []*db.GetOrderItemsRow, total *int)
+
+	GetCachedOrderItemActive(ctx context.Context, req *requests.FindAllOrderItems) ([]*db.GetOrderItemsActiveRow, *int, bool)
+	SetCachedOrderItemActive(ctx context.Context, req *requests.FindAllOrderItems, data []*db.GetOrderItemsActiveRow, total *int)
+
+	GetCachedOrderItemTrashed(ctx context.Context, req *requests.FindAllOrderItems) ([]*db.GetOrderItemsTrashedRow, *int, bool)
+	SetCachedOrderItemTrashed(ctx context.Context, req *requests.FindAllOrderItems, data []*db.GetOrderItemsTrashedRow, total *int)
+
+	GetCachedOrderItems(ctx context.Context, orderID int) ([]*db.GetOrderItemsByOrderRow, bool)
+	SetCachedOrderItems(ctx context.Context, data []*db.GetOrderItemsByOrderRow)
+}

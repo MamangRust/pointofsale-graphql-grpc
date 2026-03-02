@@ -7,571 +7,733 @@ package graph
 import (
 	"context"
 
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
+	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/model"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
-	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/category_errors"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // CreateCategory is the resolver for the createCategory field.
 func (r *mutationResolver) CreateCategory(ctx context.Context, input model.CreateCategoryRequest) (*model.APIResponseCategory, error) {
-	req := &pb.CreateCategoryRequest{
-		Name:        input.Name,
-		Description: *input.Description,
-	}
+	return ResolverHandle(r.ResolverHandle, "CreateCategory", ctx, func(ctx context.Context) (*model.APIResponseCategory, error) {
+		req := &requests.CreateCategoryRequest{
+			Name:        input.Name,
+			Description: *input.Description,
+		}
 
-	res, err := r.CategoryGraphql.CategoryClient.Create(ctx, req)
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		reqPb := &pb.CreateCategoryRequest{
+			Name:        req.Name,
+			Description: req.Description,
+		}
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategory(res)
+		res, err := r.CategoryGraphql.CategoryClient.Create(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "CreateCategory")
+		}
 
-	return so, nil
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategory(res)
+
+		r.CategoryGraphql.Cache.DeleteCachedCategoryCache(ctx, int(res.Data.Id))
+
+		return so, nil
+	})
 }
 
 // UpdateCategory is the resolver for the updateCategory field.
 func (r *mutationResolver) UpdateCategory(ctx context.Context, input model.UpdateCategoryRequest) (*model.APIResponseCategory, error) {
-	id := int32(input.CategoryID)
+	return ResolverHandle(r.ResolverHandle, "UpdateCategory", ctx, func(ctx context.Context) (*model.APIResponseCategory, error) {
+		id := int(input.CategoryID)
 
-	if id == 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	req := &pb.UpdateCategoryRequest{
-		CategoryId:  id,
-		Name:        input.Name,
-		Description: *input.Description,
-	}
+		req := &requests.UpdateCategoryRequest{
+			CategoryID:  &id,
+			Name:        input.Name,
+			Description: *input.Description,
+		}
 
-	res, err := r.CategoryGraphql.CategoryClient.Update(ctx, req)
+		if err := req.Validate(); err != nil {
+			validations := r.parseValidationErrors(err)
+			return nil, errors.NewValidationError(validations)
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		reqPb := &pb.UpdateCategoryRequest{
+			CategoryId:  int32(id),
+			Name:        req.Name,
+			Description: req.Description,
+		}
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategory(res)
+		res, err := r.CategoryGraphql.CategoryClient.Update(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "UpdateCategory")
+		}
 
-	return so, nil
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategory(res)
+
+		r.CategoryGraphql.Cache.DeleteCachedCategoryCache(ctx, id)
+
+		return so, nil
+	})
 }
 
 // TrashedCategory is the resolver for the trashedCategory field.
 func (r *mutationResolver) TrashedCategory(ctx context.Context, input model.FindByIDCategoryRequest) (*model.APIResponseCategoryDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "TrashedCategory", ctx, func(ctx context.Context) (*model.APIResponseCategoryDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
-	res, err := r.CategoryGraphql.CategoryClient.TrashedCategory(ctx, &pb.FindByIdCategoryRequest{
-		Id: id,
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
+
+		reqPb := &pb.FindByIdCategoryRequest{
+			Id: int32(id),
+		}
+
+		res, err := r.CategoryGraphql.CategoryClient.TrashedCategory(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "TrashedCategory")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryDeleteAt(res)
+
+		r.CategoryGraphql.Cache.DeleteCachedCategoryCache(ctx, id)
+
+		return so, nil
 	})
-
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryDeleteAt(res)
-
-	return so, nil
 }
 
 // RestoreCategory is the resolver for the restoreCategory field.
 func (r *mutationResolver) RestoreCategory(ctx context.Context, input model.FindByIDCategoryRequest) (*model.APIResponseCategoryDeleteAt, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "RestoreCategory", ctx, func(ctx context.Context) (*model.APIResponseCategoryDeleteAt, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.CategoryGraphql.CategoryClient.RestoreCategory(ctx, &pb.FindByIdCategoryRequest{
-		Id: id,
+		reqPb := &pb.FindByIdCategoryRequest{
+			Id: int32(id),
+		}
+
+		res, err := r.CategoryGraphql.CategoryClient.RestoreCategory(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreCategory")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryDeleteAt(res)
+
+		r.CategoryGraphql.Cache.DeleteCachedCategoryCache(ctx, id)
+
+		return so, nil
 	})
-
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryDeleteAt(res)
-
-	return so, nil
 }
 
 // DeleteCategoryPermanent is the resolver for the deleteCategoryPermanent field.
 func (r *mutationResolver) DeleteCategoryPermanent(ctx context.Context, input model.FindByIDCategoryRequest) (*model.APIResponseCategoryDelete, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "DeleteCategoryPermanent", ctx, func(ctx context.Context) (*model.APIResponseCategoryDelete, error) {
+		id := int(input.ID)
 
-	if id == 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	res, err := r.CategoryGraphql.CategoryClient.DeleteCategoryPermanent(ctx, &pb.FindByIdCategoryRequest{
-		Id: id,
+		reqPb := &pb.FindByIdCategoryRequest{
+			Id: int32(id),
+		}
+
+		res, err := r.CategoryGraphql.CategoryClient.DeleteCategoryPermanent(ctx, reqPb)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteCategoryPermanent")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryDelete(res)
+
+		r.CategoryGraphql.Cache.DeleteCachedCategoryCache(ctx, id)
+
+		return so, nil
 	})
-
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryDelete(res)
-
-	return so, nil
 }
 
 // RestoreAllCategory is the resolver for the restoreAllCategory field.
 func (r *mutationResolver) RestoreAllCategory(ctx context.Context) (*model.APIResponseCategoryAll, error) {
-	res, err := r.CategoryGraphql.CategoryClient.RestoreAllCategory(ctx, &emptypb.Empty{})
+	return ResolverHandle(r.ResolverHandle, "RestoreAllCategory", ctx, func(ctx context.Context) (*model.APIResponseCategoryAll, error) {
+		res, err := r.CategoryGraphql.CategoryClient.RestoreAllCategory(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "RestoreAllCategory")
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryAll(res)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryAll(res)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // DeleteAllCategoryPermanent is the resolver for the deleteAllCategoryPermanent field.
 func (r *mutationResolver) DeleteAllCategoryPermanent(ctx context.Context) (*model.APIResponseCategoryAll, error) {
-	res, err := r.CategoryGraphql.CategoryClient.DeleteAllCategoryPermanent(ctx, &emptypb.Empty{})
+	return ResolverHandle(r.ResolverHandle, "DeleteAllCategoryPermanent", ctx, func(ctx context.Context) (*model.APIResponseCategoryAll, error) {
+		res, err := r.CategoryGraphql.CategoryClient.DeleteAllCategoryPermanent(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "DeleteAllCategoryPermanent")
+		}
 
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryAll(res)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryAll(res)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindMonthlyTotalPrices is the resolver for the findMonthlyTotalPrices field.
 func (r *queryResolver) FindMonthlyTotalPrices(ctx context.Context, input model.FindYearMonthTotalPrices) (*model.APIResponseCategoryMonthlyTotalPrice, error) {
-	year := int32(input.Year)
-	month := int32(input.Month)
+	return ResolverHandle(r.ResolverHandle, "FindMonthlyTotalPrices", ctx, func(ctx context.Context) (*model.APIResponseCategoryMonthlyTotalPrice, error) {
+		year := int(input.Year)
+		month := int(input.Month)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if month <= 0 || month > 12 {
+			return nil, errors.NewBadRequestError("month is required")
+		}
 
-	if month <= 0 || month > 12 {
-		return nil, category_errors.ErrGraphqlFailedInvalidMonth
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedMonthTotalPriceCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearMonthTotalPrices{
-		Year:  year,
-		Month: month,
-	}
+		req := &pb.FindYearMonthTotalPrices{
+			Year:  int32(year),
+			Month: int32(month),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindMonthlyTotalPrices(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthlyTotalPrices")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindMonthlyTotalPrices(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyTotalPrice(data)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyTotalPrice(data)
+		r.CategoryGraphql.Cache.SetCachedMonthTotalPriceCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindYearlyTotalPrices is the resolver for the findYearlyTotalPrices field.
 func (r *queryResolver) FindYearlyTotalPrices(ctx context.Context, input model.FindYearTotalPrices) (*model.APIResponseCategoryYearlyTotalPrice, error) {
-	year := int32(input.Year)
+	return ResolverHandle(r.ResolverHandle, "FindYearlyTotalPrices", ctx, func(ctx context.Context) (*model.APIResponseCategoryYearlyTotalPrice, error) {
+		year := int(input.Year)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindYearlyTotalPrices(ctx, &pb.FindYearTotalPrices{
-		Year: year,
+		if cached, found := r.CategoryGraphql.Cache.GetCachedYearTotalPriceCache(ctx, year); found {
+			return cached, nil
+		}
+
+		data, err := r.CategoryGraphql.CategoryClient.FindYearlyTotalPrices(ctx, &pb.FindYearTotalPrices{
+			Year: int32(year),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearlyTotalPrices")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyTotalPrice(data)
+
+		r.CategoryGraphql.Cache.SetCachedYearTotalPriceCache(ctx, year, so)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyTotalPrice(data)
-
-	return so, nil
 }
 
 // FindMonthlyTotalPricesByID is the resolver for the findMonthlyTotalPricesById field.
 func (r *queryResolver) FindMonthlyTotalPricesByID(ctx context.Context, input model.FindYearMonthTotalPriceByID) (*model.APIResponseCategoryMonthlyTotalPrice, error) {
-	year := int32(input.Year)
-	month := int32(input.Month)
-	id := int32(input.CategoryID)
+	return ResolverHandle(r.ResolverHandle, "FindMonthlyTotalPricesByID", ctx, func(ctx context.Context) (*model.APIResponseCategoryMonthlyTotalPrice, error) {
+		year := int(input.Year)
+		month := int(input.Month)
+		id := int(input.CategoryID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if month <= 0 || month > 12 {
+			return nil, errors.NewBadRequestError("month is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("category id is required")
+		}
 
-	if month <= 0 || month > 12 {
-		return nil, category_errors.ErrGraphqlFailedInvalidMonth
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedMonthTotalPriceByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		req := &pb.FindYearMonthTotalPriceById{
+			Year:       int32(year),
+			Month:      int32(month),
+			CategoryId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindMonthlyTotalPricesById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthlyTotalPricesByID")
+		}
 
-	req := &pb.FindYearMonthTotalPriceById{
-		Year:       year,
-		Month:      month,
-		CategoryId: id,
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyTotalPrice(data)
 
-	data, err := r.CategoryGraphql.CategoryClient.FindMonthlyTotalPricesById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		r.CategoryGraphql.Cache.SetCachedMonthTotalPriceByIdCache(ctx, &input, so)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyTotalPrice(data)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindYearlyTotalPricesByID is the resolver for the findYearlyTotalPricesById field.
 func (r *queryResolver) FindYearlyTotalPricesByID(ctx context.Context, input model.FindYearTotalPriceByID) (*model.APIResponseCategoryYearlyTotalPrice, error) {
-	year := int32(input.Year)
-	id := int32(input.CategoryID)
+	return ResolverHandle(r.ResolverHandle, "FindYearlyTotalPricesByID", ctx, func(ctx context.Context) (*model.APIResponseCategoryYearlyTotalPrice, error) {
+		year := int(input.Year)
+		id := int(input.CategoryID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("category id is required")
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedYearTotalPriceByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearTotalPriceById{
-		Year:       year,
-		CategoryId: id,
-	}
+		req := &pb.FindYearTotalPriceById{
+			Year:       int32(year),
+			CategoryId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindYearlyTotalPricesById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearlyTotalPricesByID")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindYearlyTotalPricesById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyTotalPrice(data)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyTotalPrice(data)
+		r.CategoryGraphql.Cache.SetCachedYearTotalPriceByIdCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindMonthlyTotalPricesByMerchant is the resolver for the findMonthlyTotalPricesByMerchant field.
 func (r *queryResolver) FindMonthlyTotalPricesByMerchant(ctx context.Context, input model.FindYearMonthTotalPriceByMerchant) (*model.APIResponseCategoryMonthlyTotalPrice, error) {
-	year := int32(input.Year)
-	month := int32(input.Month)
-	id := int32(input.MerchantID)
+	return ResolverHandle(r.ResolverHandle, "FindMonthlyTotalPricesByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCategoryMonthlyTotalPrice, error) {
+		year := int(input.Year)
+		month := int(input.Month)
+		id := int(input.MerchantID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if month <= 0 || month > 12 {
+			return nil, errors.NewBadRequestError("month is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	if month <= 0 || month > 12 {
-		return nil, category_errors.ErrGraphqlFailedInvalidMonth
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedMonthTotalPriceByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		req := &pb.FindYearMonthTotalPriceByMerchant{
+			Year:       int32(year),
+			Month:      int32(month),
+			MerchantId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindMonthlyTotalPricesByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthlyTotalPricesByMerchant")
+		}
 
-	req := &pb.FindYearMonthTotalPriceByMerchant{
-		Year:       year,
-		Month:      month,
-		MerchantId: id,
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyTotalPrice(data)
 
-	data, err := r.CategoryGraphql.CategoryClient.FindMonthlyTotalPricesByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		r.CategoryGraphql.Cache.SetCachedMonthTotalPriceByMerchantCache(ctx, &input, so)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyTotalPrice(data)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindYearlyTotalPricesByMerchant is the resolver for the findYearlyTotalPricesByMerchant field.
 func (r *queryResolver) FindYearlyTotalPricesByMerchant(ctx context.Context, input model.FindYearTotalPriceByMerchant) (*model.APIResponseCategoryYearlyTotalPrice, error) {
-	year := int32(input.Year)
-	id := int32(input.MerchantID)
+	return ResolverHandle(r.ResolverHandle, "FindYearlyTotalPricesByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCategoryYearlyTotalPrice, error) {
+		year := int(input.Year)
+		id := int(input.MerchantID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidMerchantId
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedYearTotalPriceByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearTotalPriceByMerchant{
-		Year:       year,
-		MerchantId: id,
-	}
+		req := &pb.FindYearTotalPriceByMerchant{
+			Year:       int32(year),
+			MerchantId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindYearlyTotalPricesByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearlyTotalPricesByMerchant")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindYearlyTotalPricesByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyTotalPrice(data)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyTotalPrice(data)
+		r.CategoryGraphql.Cache.SetCachedYearTotalPriceByMerchantCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindMonthPrice is the resolver for the findMonthPrice field.
 func (r *queryResolver) FindMonthPrice(ctx context.Context, input model.FindYearCategory) (*model.APIResponseCategoryMonthPrice, error) {
-	year := int32(input.Year)
+	return ResolverHandle(r.ResolverHandle, "FindMonthPrice", ctx, func(ctx context.Context) (*model.APIResponseCategoryMonthPrice, error) {
+		year := int(input.Year)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindMonthPrice(ctx, &pb.FindYearCategory{
-		Year: year,
+		if cached, found := r.CategoryGraphql.Cache.GetCachedMonthPriceCache(ctx, year); found {
+			return cached, nil
+		}
+
+		data, err := r.CategoryGraphql.CategoryClient.FindMonthPrice(ctx, &pb.FindYearCategory{
+			Year: int32(year),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthPrice")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyPrice(data)
+
+		r.CategoryGraphql.Cache.SetCachedMonthPriceCache(ctx, year, so)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyPrice(data)
-
-	return so, nil
 }
 
 // FindYearPrice is the resolver for the findYearPrice field.
 func (r *queryResolver) FindYearPrice(ctx context.Context, input model.FindYearCategory) (*model.APIResponseCategoryYearPrice, error) {
-	year := int32(input.Year)
+	return ResolverHandle(r.ResolverHandle, "FindYearPrice", ctx, func(ctx context.Context) (*model.APIResponseCategoryYearPrice, error) {
+		year := int(input.Year)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindYearPrice(ctx, &pb.FindYearCategory{
-		Year: year,
+		if cached, found := r.CategoryGraphql.Cache.GetCachedYearPriceCache(ctx, year); found {
+			return cached, nil
+		}
+
+		data, err := r.CategoryGraphql.CategoryClient.FindYearPrice(ctx, &pb.FindYearCategory{
+			Year: int32(year),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearPrice")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyPrice(data)
+
+		r.CategoryGraphql.Cache.SetCachedYearPriceCache(ctx, year, so)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyPrice(data)
-
-	return so, nil
 }
 
 // FindMonthPriceByMerchant is the resolver for the findMonthPriceByMerchant field.
 func (r *queryResolver) FindMonthPriceByMerchant(ctx context.Context, input model.FindYearCategoryByMerchant) (*model.APIResponseCategoryMonthPrice, error) {
-	year := int32(input.Year)
-	id := int32(input.MerchantID)
+	return ResolverHandle(r.ResolverHandle, "FindMonthPriceByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCategoryMonthPrice, error) {
+		year := int(input.Year)
+		id := int(input.MerchantID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidMerchantId
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedMonthPriceByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearCategoryByMerchant{
-		Year:       year,
-		MerchantId: id,
-	}
+		req := &pb.FindYearCategoryByMerchant{
+			Year:       int32(year),
+			MerchantId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindMonthPriceByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthPriceByMerchant")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindMonthPriceByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyPrice(data)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyPrice(data)
+		r.CategoryGraphql.Cache.SetCachedMonthPriceByMerchantCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindYearPriceByMerchant is the resolver for the findYearPriceByMerchant field.
 func (r *queryResolver) FindYearPriceByMerchant(ctx context.Context, input model.FindYearCategoryByMerchant) (*model.APIResponseCategoryYearPrice, error) {
-	year := int32(input.Year)
-	id := int32(input.MerchantID)
+	return ResolverHandle(r.ResolverHandle, "FindYearPriceByMerchant", ctx, func(ctx context.Context) (*model.APIResponseCategoryYearPrice, error) {
+		year := int(input.Year)
+		id := int(input.MerchantID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("merchant id is required")
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidMerchantId
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedYearPriceByMerchantCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearCategoryByMerchant{
-		Year:       year,
-		MerchantId: id,
-	}
+		req := &pb.FindYearCategoryByMerchant{
+			Year:       int32(year),
+			MerchantId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindYearPriceByMerchant(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearPriceByMerchant")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindYearPriceByMerchant(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyPrice(data)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyPrice(data)
+		r.CategoryGraphql.Cache.SetCachedYearPriceByMerchantCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindMonthPriceByID is the resolver for the findMonthPriceById field.
 func (r *queryResolver) FindMonthPriceByID(ctx context.Context, input model.FindYearCategoryByID) (*model.APIResponseCategoryMonthPrice, error) {
-	year := int32(input.Year)
-	id := int32(input.CategoryID)
+	return ResolverHandle(r.ResolverHandle, "FindMonthPriceByID", ctx, func(ctx context.Context) (*model.APIResponseCategoryMonthPrice, error) {
+		year := int(input.Year)
+		id := int(input.CategoryID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("category id is required")
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedMonthPriceByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearCategoryById{
-		Year:       year,
-		CategoryId: id,
-	}
+		req := &pb.FindYearCategoryById{
+			Year:       int32(year),
+			CategoryId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindMonthPriceById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindMonthPriceByID")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindMonthPriceById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyPrice(data)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryMonthlyPrice(data)
+		r.CategoryGraphql.Cache.SetCachedMonthPriceByIdCache(ctx, &input, so)
 
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindYearPriceByID is the resolver for the findYearPriceById field.
 func (r *queryResolver) FindYearPriceByID(ctx context.Context, input model.FindYearCategoryByID) (*model.APIResponseCategoryYearPrice, error) {
-	year := int32(input.Year)
-	id := int32(input.CategoryID)
+	return ResolverHandle(r.ResolverHandle, "FindYearPriceByID", ctx, func(ctx context.Context) (*model.APIResponseCategoryYearPrice, error) {
+		year := int(input.Year)
+		id := int(input.CategoryID)
 
-	if year <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidYear
-	}
+		if year <= 0 {
+			return nil, errors.NewBadRequestError("year is required")
+		}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("category id is required")
+		}
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedYearPriceByIdCache(ctx, &input); found {
+			return cached, nil
+		}
 
-	req := &pb.FindYearCategoryById{
-		Year:       year,
-		CategoryId: id,
-	}
+		req := &pb.FindYearCategoryById{
+			Year:       int32(year),
+			CategoryId: int32(id),
+		}
+		data, err := r.CategoryGraphql.CategoryClient.FindYearPriceById(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindYearPriceByID")
+		}
 
-	data, err := r.CategoryGraphql.CategoryClient.FindYearPriceById(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyPrice(data)
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategoryYearlyPrice(data)
+		r.CategoryGraphql.Cache.SetCachedYearPriceByIdCache(ctx, &input, so)
 
-	return so, nil
-}
-
-// FindByActiveCategory is the resolver for the findByActiveCategory field.
-func (r *queryResolver) FindByActiveCategory(ctx context.Context, input *model.FindAllCategoryRequest) (*model.APIResponsePaginationCategoryDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
-
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
-
-	req := &pb.FindAllCategoryRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
-
-	categories, err := r.CategoryGraphql.CategoryClient.FindByActive(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponsePaginationCategoryDeleteAt(categories)
-
-	return so, nil
-}
-
-// FindByTrashedCategory is the resolver for the findByTrashedCategory field.
-func (r *queryResolver) FindByTrashedCategory(ctx context.Context, input *model.FindAllCategoryRequest) (*model.APIResponsePaginationCategoryDeleteAt, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
-
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
-
-	req := &pb.FindAllCategoryRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
-
-	categories, err := r.CategoryGraphql.CategoryClient.FindByTrashed(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
-
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponsePaginationCategoryDeleteAt(categories)
-
-	return so, nil
+		return so, nil
+	})
 }
 
 // FindAllCategory is the resolver for the findAllCategory field.
 func (r *queryResolver) FindAllCategory(ctx context.Context, input *model.FindAllCategoryRequest) (*model.APIResponsePaginationCategory, error) {
-	page := int32(*input.Page)
-	pageSize := int32(*input.PageSize)
-	search := input.Search
+	return ResolverHandle(r.ResolverHandle, "FindAllCategory", ctx, func(ctx context.Context) (*model.APIResponsePaginationCategory, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+		normalizedInput := &model.FindAllCategoryRequest{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
 
-	req := &pb.FindAllCategoryRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Search:   *search,
-	}
+		if cached, found := r.CategoryGraphql.Cache.GetCachedCategoriesCache(ctx, normalizedInput); found {
+			return cached, nil
+		}
 
-	categories, err := r.CategoryGraphql.CategoryClient.FindAll(ctx, req)
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+		req := &pb.FindAllCategoryRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		categories, err := r.CategoryGraphql.CategoryClient.FindAll(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindAllCategory")
+		}
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponsePaginationCategory(categories)
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponsePaginationCategory(categories)
 
-	return so, nil
+		r.CategoryGraphql.Cache.SetCachedCategoriesCache(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }
 
 // FindByIDCategory is the resolver for the findByIdCategory field.
 func (r *queryResolver) FindByIDCategory(ctx context.Context, input model.FindByIDCategoryRequest) (*model.APIResponseCategory, error) {
-	id := int32(input.ID)
+	return ResolverHandle(r.ResolverHandle, "FindByIDCategory", ctx, func(ctx context.Context) (*model.APIResponseCategory, error) {
+		id := int(input.ID)
 
-	if id <= 0 {
-		return nil, category_errors.ErrGraphqlFailedInvalidId
-	}
+		if id <= 0 {
+			return nil, errors.NewBadRequestError("id is required")
+		}
 
-	category, err := r.CategoryGraphql.CategoryClient.FindById(ctx, &pb.FindByIdCategoryRequest{
-		Id: id,
+		if cached, found := r.CategoryGraphql.Cache.GetCachedCategoryCache(ctx, id); found {
+			return cached, nil
+		}
+
+		category, err := r.CategoryGraphql.CategoryClient.FindById(ctx, &pb.FindByIdCategoryRequest{
+			Id: int32(id),
+		})
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByIDCategory")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategory(category)
+
+		r.CategoryGraphql.Cache.SetCachedCategoryCache(ctx, so)
+
+		return so, nil
 	})
-	if err != nil {
-		return nil, response.ToGraphqlErrorFromErrorResponse(err)
-	}
+}
 
-	so := r.CategoryGraphql.Mapping.ToGraphqlResponseCategory(category)
+// FindByActiveCategory is the resolver for the findByActiveCategory field.
+func (r *queryResolver) FindByActiveCategory(ctx context.Context, input *model.FindAllCategoryRequest) (*model.APIResponsePaginationCategoryDeleteAt, error) {
+	return ResolverHandle(r.ResolverHandle, "FindByActiveCategory", ctx, func(ctx context.Context) (*model.APIResponsePaginationCategoryDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
 
-	return so, nil
+		normalizedInput := &model.FindAllCategoryRequest{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
+
+		if cached, found := r.CategoryGraphql.Cache.GetCachedCategoryActiveCache(ctx, normalizedInput); found {
+			return cached, nil
+		}
+
+		req := &pb.FindAllCategoryRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		categories, err := r.CategoryGraphql.CategoryClient.FindByActive(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByActiveCategory")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponsePaginationCategoryDeleteAt(categories)
+
+		r.CategoryGraphql.Cache.SetCachedCategoryActiveCache(ctx, normalizedInput, so)
+
+		return so, nil
+	})
+}
+
+// FindByTrashedCategory is the resolver for the findByTrashedCategory field.
+func (r *queryResolver) FindByTrashedCategory(ctx context.Context, input *model.FindAllCategoryRequest) (*model.APIResponsePaginationCategoryDeleteAt, error) {
+	return ResolverHandle(r.ResolverHandle, "FindByTrashedCategory", ctx, func(ctx context.Context) (*model.APIResponsePaginationCategoryDeleteAt, error) {
+		page := int32(*input.Page)
+		pageSize := int32(*input.PageSize)
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 10
+		}
+
+		normalizedInput := &model.FindAllCategoryRequest{
+			Page:     &page,
+			PageSize: &pageSize,
+			Search:   input.Search,
+		}
+
+		if cached, found := r.CategoryGraphql.Cache.GetCachedCategoryTrashedCache(ctx, normalizedInput); found {
+			return cached, nil
+		}
+
+		req := &pb.FindAllCategoryRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+			Search:   *input.Search,
+		}
+		categories, err := r.CategoryGraphql.CategoryClient.FindByTrashed(ctx, req)
+		if err != nil {
+			return nil, r.handleGraphQLError(err, "FindByTrashedCategory")
+		}
+
+		so := r.CategoryGraphql.Mapping.ToGraphqlResponsePaginationCategoryDeleteAt(categories)
+
+		r.CategoryGraphql.Cache.SetCachedCategoryTrashedCache(ctx, normalizedInput, so)
+
+		return so, nil
+	})
 }

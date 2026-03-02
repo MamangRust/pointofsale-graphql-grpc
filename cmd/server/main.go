@@ -1,20 +1,17 @@
 package main
 
-import (
-	"fmt"
-
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/app"
-	"go.uber.org/zap"
-)
+import "github.com/MamangRust/pointofsale-graphql-grpc/internal/app"
 
 func main() {
-	server, err := app.NewServer()
+	server, err := app.NewServer(&app.Config{
+		ServiceName:    "server",
+		ServiceVersion: "1.0.0",
+		Environment:    "production",
+		OtelEndpoint:   "otel-collector:4317",
+	})
+
 	if err != nil {
-		server.Logger.Error("Failed to initialize server",
-			zap.String("stage", "initialization"),
-			zap.Error(err),
-		)
-		panic(fmt.Sprintf("❌ Server initialization failed: %v", err))
+		panic(err)
 	}
 
 	server.Run()

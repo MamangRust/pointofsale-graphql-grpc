@@ -4,30 +4,26 @@ import (
 	"context"
 	"math"
 
-	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/order_errors"
-
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/requests"
-	"github.com/MamangRust/pointofsale-graphql-grpc/internal/domain/response"
-	protomapper "github.com/MamangRust/pointofsale-graphql-grpc/internal/mapper/proto"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/pb"
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/service"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors"
+	"github.com/MamangRust/pointofsale-graphql-grpc/pkg/errors/order_errors"
 
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type orderHandleGrpc struct {
 	pb.UnimplementedOrderServiceServer
 	orderService service.OrderService
-	mapping      protomapper.OrderProtoMapper
 }
 
 func NewOrderHandleGrpc(
 	orderService service.OrderService,
-	mapping protomapper.OrderProtoMapper,
 ) *orderHandleGrpc {
 	return &orderHandleGrpc{
 		orderService: orderService,
-		mapping:      mapping,
 	}
 }
 
@@ -49,10 +45,10 @@ func (s *orderHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllOrderR
 		Search:   search,
 	}
 
-	merchant, totalRecords, err := s.orderService.FindAll(&reqService)
+	orders, totalRecords, err := s.orderService.FindAllOrders(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -64,8 +60,24 @@ func (s *orderHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllOrderR
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationOrder(paginationMeta, "success", "Successfully fetched order", merchant)
-	return so, nil
+	var orderResponses []*pb.OrderResponse
+	for _, order := range orders {
+		orderResponses = append(orderResponses, &pb.OrderResponse{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+		})
+	}
+
+	return &pb.ApiResponsePaginationOrder{
+		Status:     "success",
+		Message:    "Successfully fetched order",
+		Data:       orderResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindByMerchant(ctx context.Context, request *pb.FindAllOrderMerchantRequest) (*pb.ApiResponsePaginationOrder, error) {
@@ -88,10 +100,10 @@ func (s *orderHandleGrpc) FindByMerchant(ctx context.Context, request *pb.FindAl
 		MerchantID: int(merchant_id),
 	}
 
-	merchant, totalRecords, err := s.orderService.FindByMerchant(&reqService)
+	orders, totalRecords, err := s.orderService.FindByMerchant(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -103,8 +115,24 @@ func (s *orderHandleGrpc) FindByMerchant(ctx context.Context, request *pb.FindAl
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationOrder(paginationMeta, "success", "Successfully fetched order", merchant)
-	return so, nil
+	var orderResponses []*pb.OrderResponse
+	for _, order := range orders {
+		orderResponses = append(orderResponses, &pb.OrderResponse{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+		})
+	}
+
+	return &pb.ApiResponsePaginationOrder{
+		Status:     "success",
+		Message:    "Successfully fetched order",
+		Data:       orderResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdOrderRequest) (*pb.ApiResponseOrder, error) {
@@ -114,15 +142,24 @@ func (s *orderHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdOrde
 		return nil, order_errors.ErrGrpcFailedInvalidId
 	}
 
-	merchant, err := s.orderService.FindById(id)
+	order, err := s.orderService.FindById(ctx, id)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrder("success", "Successfully fetched order", merchant)
-
-	return so, nil
+	return &pb.ApiResponseOrder{
+		Status:  "success",
+		Message: "Successfully fetched order",
+		Data: &pb.OrderResponse{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+		},
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindMonthlyTotalRevenue(ctx context.Context, req *pb.FindYearMonthTotalRevenue) (*pb.ApiResponseOrderMonthlyTotalRevenue, error) {
@@ -142,13 +179,26 @@ func (s *orderHandleGrpc) FindMonthlyTotalRevenue(ctx context.Context, req *pb.F
 		Month: month,
 	}
 
-	methods, err := s.orderService.FindMonthlyTotalRevenue(&reqService)
+	methods, err := s.orderService.FindMonthlyTotalRevenue(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseMonthlyTotalRevenue("success", "Monthly sales retrieved successfully", methods), nil
+	var monthlyRevenueResponses []*pb.OrderMonthlyTotalRevenueResponse
+	for _, method := range methods {
+		monthlyRevenueResponses = append(monthlyRevenueResponses, &pb.OrderMonthlyTotalRevenueResponse{
+			Year:         method.Year,
+			Month:        method.Month,
+			TotalRevenue: int32(method.TotalRevenue),
+		})
+	}
+
+	return &pb.ApiResponseOrderMonthlyTotalRevenue{
+		Status:  "success",
+		Message: "Monthly sales retrieved successfully",
+		Data:    monthlyRevenueResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindYearlyTotalRevenue(ctx context.Context, req *pb.FindYearTotalRevenue) (*pb.ApiResponseOrderYearlyTotalRevenue, error) {
@@ -158,13 +208,25 @@ func (s *orderHandleGrpc) FindYearlyTotalRevenue(ctx context.Context, req *pb.Fi
 		return nil, order_errors.ErrGrpcInvalidYear
 	}
 
-	methods, err := s.orderService.FindYearlyTotalRevenue(year)
+	methods, err := s.orderService.FindYearlyTotalRevenue(ctx, year)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseYearlyTotalRevenue("success", "Yearly payment methods retrieved successfully", methods), nil
+	var yearlyRevenueResponses []*pb.OrderYearlyTotalRevenueResponse
+	for _, method := range methods {
+		yearlyRevenueResponses = append(yearlyRevenueResponses, &pb.OrderYearlyTotalRevenueResponse{
+			Year:         method.Year,
+			TotalRevenue: int32(method.TotalRevenue),
+		})
+	}
+
+	return &pb.ApiResponseOrderYearlyTotalRevenue{
+		Status:  "success",
+		Message: "Yearly payment methods retrieved successfully",
+		Data:    yearlyRevenueResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindMonthlyTotalRevenueById(ctx context.Context, req *pb.FindYearMonthTotalRevenueById) (*pb.ApiResponseOrderMonthlyTotalRevenue, error) {
@@ -190,13 +252,26 @@ func (s *orderHandleGrpc) FindMonthlyTotalRevenueById(ctx context.Context, req *
 		Year:    year,
 	}
 
-	methods, err := s.orderService.FindMonthlyTotalRevenueById(&reqService)
+	methods, err := s.orderService.FindMonthlyTotalRevenueById(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseMonthlyTotalRevenue("success", "Monthly sales retrieved successfully", methods), nil
+	var monthlyRevenueResponses []*pb.OrderMonthlyTotalRevenueResponse
+	for _, method := range methods {
+		monthlyRevenueResponses = append(monthlyRevenueResponses, &pb.OrderMonthlyTotalRevenueResponse{
+			Year:         method.Year,
+			Month:        method.Month,
+			TotalRevenue: int32(method.TotalRevenue),
+		})
+	}
+
+	return &pb.ApiResponseOrderMonthlyTotalRevenue{
+		Status:  "success",
+		Message: "Monthly sales retrieved successfully",
+		Data:    monthlyRevenueResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindYearlyTotalRevenueById(ctx context.Context, req *pb.FindYearTotalRevenueById) (*pb.ApiResponseOrderYearlyTotalRevenue, error) {
@@ -216,13 +291,25 @@ func (s *orderHandleGrpc) FindYearlyTotalRevenueById(ctx context.Context, req *p
 		Year:    year,
 	}
 
-	methods, err := s.orderService.FindYearlyTotalRevenueById(&reqService)
+	methods, err := s.orderService.FindYearlyTotalRevenueById(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseYearlyTotalRevenue("success", "Yearly payment methods retrieved successfully", methods), nil
+	var yearlyRevenueResponses []*pb.OrderYearlyTotalRevenueResponse
+	for _, method := range methods {
+		yearlyRevenueResponses = append(yearlyRevenueResponses, &pb.OrderYearlyTotalRevenueResponse{
+			Year:         method.Year,
+			TotalRevenue: method.TotalRevenue,
+		})
+	}
+
+	return &pb.ApiResponseOrderYearlyTotalRevenue{
+		Status:  "success",
+		Message: "Yearly payment methods retrieved successfully",
+		Data:    yearlyRevenueResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindMonthlyTotalRevenueByMerchant(ctx context.Context, req *pb.FindYearMonthTotalRevenueByMerchant) (*pb.ApiResponseOrderMonthlyTotalRevenue, error) {
@@ -248,13 +335,26 @@ func (s *orderHandleGrpc) FindMonthlyTotalRevenueByMerchant(ctx context.Context,
 		MerchantID: id,
 	}
 
-	methods, err := s.orderService.FindMonthlyTotalRevenueByMerchant(&reqService)
+	methods, err := s.orderService.FindMonthlyTotalRevenueByMerchant(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseMonthlyTotalRevenue("success", "Monthly sales retrieved successfully", methods), nil
+	var monthlyRevenueResponses []*pb.OrderMonthlyTotalRevenueResponse
+	for _, method := range methods {
+		monthlyRevenueResponses = append(monthlyRevenueResponses, &pb.OrderMonthlyTotalRevenueResponse{
+			Year:         method.Year,
+			Month:        method.Month,
+			TotalRevenue: int32(method.TotalRevenue),
+		})
+	}
+
+	return &pb.ApiResponseOrderMonthlyTotalRevenue{
+		Status:  "success",
+		Message: "Monthly sales retrieved successfully",
+		Data:    monthlyRevenueResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindYearlyTotalRevenueByMerchant(ctx context.Context, req *pb.FindYearTotalRevenueByMerchant) (*pb.ApiResponseOrderYearlyTotalRevenue, error) {
@@ -274,13 +374,25 @@ func (s *orderHandleGrpc) FindYearlyTotalRevenueByMerchant(ctx context.Context, 
 		MerchantID: id,
 	}
 
-	methods, err := s.orderService.FindYearlyTotalRevenueByMerchant(&reqService)
+	methods, err := s.orderService.FindYearlyTotalRevenueByMerchant(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseYearlyTotalRevenue("success", "Yearly payment methods retrieved successfully", methods), nil
+	var yearlyRevenueResponses []*pb.OrderYearlyTotalRevenueResponse
+	for _, method := range methods {
+		yearlyRevenueResponses = append(yearlyRevenueResponses, &pb.OrderYearlyTotalRevenueResponse{
+			Year:         method.Year,
+			TotalRevenue: method.TotalRevenue,
+		})
+	}
+
+	return &pb.ApiResponseOrderYearlyTotalRevenue{
+		Status:  "success",
+		Message: "Yearly payment methods retrieved successfully",
+		Data:    yearlyRevenueResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindMonthlyRevenue(ctx context.Context, request *pb.FindYearOrder) (*pb.ApiResponseOrderMonthly, error) {
@@ -290,13 +402,26 @@ func (s *orderHandleGrpc) FindMonthlyRevenue(ctx context.Context, request *pb.Fi
 		return nil, order_errors.ErrGrpcInvalidYear
 	}
 
-	res, err := s.orderService.FindMonthlyOrder(year)
+	res, err := s.orderService.FindMonthlyOrder(ctx, year)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseMonthlyRevenue("success", "Monthly revenue data retrieved", res)
-	return so, nil
+	var monthlyResponses []*pb.OrderMonthlyResponse
+	for _, month := range res {
+		monthlyResponses = append(monthlyResponses, &pb.OrderMonthlyResponse{
+			Month:          month.Month,
+			OrderCount:     int32(month.OrderCount),
+			TotalRevenue:   int32(month.TotalRevenue),
+			TotalItemsSold: int32(month.TotalItemsSold),
+		})
+	}
+
+	return &pb.ApiResponseOrderMonthly{
+		Status:  "success",
+		Message: "Monthly revenue data retrieved",
+		Data:    monthlyResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindYearlyRevenue(ctx context.Context, request *pb.FindYearOrder) (*pb.ApiResponseOrderYearly, error) {
@@ -306,13 +431,28 @@ func (s *orderHandleGrpc) FindYearlyRevenue(ctx context.Context, request *pb.Fin
 		return nil, order_errors.ErrGrpcInvalidYear
 	}
 
-	res, err := s.orderService.FindYearlyOrder(year)
+	res, err := s.orderService.FindYearlyOrder(ctx, year)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseYearlyRevenue("success", "Yearly revenue data retrieved", res)
-	return so, nil
+	var yearlyResponses []*pb.OrderYearlyResponse
+	for _, yearData := range res {
+		yearlyResponses = append(yearlyResponses, &pb.OrderYearlyResponse{
+			Year:               yearData.Year,
+			OrderCount:         int32(yearData.OrderCount),
+			TotalRevenue:       int32(yearData.TotalRevenue),
+			TotalItemsSold:     int32(yearData.TotalItemsSold),
+			ActiveCashiers:     int32(yearData.ActiveCashiers),
+			UniqueProductsSold: int32(yearData.UniqueProductsSold),
+		})
+	}
+
+	return &pb.ApiResponseOrderYearly{
+		Status:  "success",
+		Message: "Yearly revenue data retrieved",
+		Data:    yearlyResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindMonthlyRevenueByMerchant(ctx context.Context, request *pb.FindYearOrderByMerchant) (*pb.ApiResponseOrderMonthly, error) {
@@ -332,14 +472,27 @@ func (s *orderHandleGrpc) FindMonthlyRevenueByMerchant(ctx context.Context, requ
 		MerchantID: id,
 	}
 
-	res, err := s.orderService.FindMonthlyOrderByMerchant(&reqService)
+	res, err := s.orderService.FindMonthlyOrderByMerchant(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseMonthlyRevenue("success", "Monthly revenue by merchant data retrieved", res)
-	return so, nil
+	var monthlyResponses []*pb.OrderMonthlyResponse
+	for _, month := range res {
+		monthlyResponses = append(monthlyResponses, &pb.OrderMonthlyResponse{
+			Month:          month.Month,
+			OrderCount:     int32(month.OrderCount),
+			TotalRevenue:   int32(month.TotalRevenue),
+			TotalItemsSold: int32(month.TotalItemsSold),
+		})
+	}
+
+	return &pb.ApiResponseOrderMonthly{
+		Status:  "success",
+		Message: "Monthly revenue by merchant data retrieved",
+		Data:    monthlyResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindYearlyRevenueByMerchant(ctx context.Context, request *pb.FindYearOrderByMerchant) (*pb.ApiResponseOrderYearly, error) {
@@ -359,14 +512,29 @@ func (s *orderHandleGrpc) FindYearlyRevenueByMerchant(ctx context.Context, reque
 		MerchantID: id,
 	}
 
-	res, err := s.orderService.FindYearlyOrderByMerchant(&reqService)
+	res, err := s.orderService.FindYearlyOrderByMerchant(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseYearlyRevenue("success", "Yearly revenue by merchant data retrieved", res)
-	return so, nil
+	var yearlyResponses []*pb.OrderYearlyResponse
+	for _, yearData := range res {
+		yearlyResponses = append(yearlyResponses, &pb.OrderYearlyResponse{
+			Year:               yearData.Year,
+			OrderCount:         int32(yearData.OrderCount),
+			TotalRevenue:       int32(yearData.TotalRevenue),
+			TotalItemsSold:     int32(yearData.TotalItemsSold),
+			ActiveCashiers:     int32(yearData.ActiveCashiers),
+			UniqueProductsSold: int32(yearData.UniqueProductsSold),
+		})
+	}
+
+	return &pb.ApiResponseOrderYearly{
+		Status:  "success",
+		Message: "Yearly revenue by merchant data retrieved",
+		Data:    yearlyResponses,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAllOrderRequest) (*pb.ApiResponsePaginationOrderDeleteAt, error) {
@@ -387,10 +555,10 @@ func (s *orderHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAllO
 		Search:   search,
 	}
 
-	merchant, totalRecords, err := s.orderService.FindByActive(&reqService)
+	orders, totalRecords, err := s.orderService.FindByActive(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -401,9 +569,31 @@ func (s *orderHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAllO
 		TotalPages:   int32(totalPages),
 		TotalRecords: int32(*totalRecords),
 	}
-	so := s.mapping.ToProtoResponsePaginationOrderDeleteAt(paginationMeta, "success", "Successfully fetched active order", merchant)
 
-	return so, nil
+	var orderResponses []*pb.OrderResponseDeleteAt
+	for _, order := range orders {
+		var deletedAt string
+		if order.DeletedAt.Valid {
+			deletedAt = order.DeletedAt.Time.Format("2006-01-02")
+		}
+
+		orderResponses = append(orderResponses, &pb.OrderResponseDeleteAt{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: deletedAt},
+		})
+	}
+
+	return &pb.ApiResponsePaginationOrderDeleteAt{
+		Status:     "success",
+		Message:    "Successfully fetched active order",
+		Data:       orderResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *orderHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindAllOrderRequest) (*pb.ApiResponsePaginationOrderDeleteAt, error) {
@@ -424,10 +614,10 @@ func (s *orderHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindAll
 		Search:   search,
 	}
 
-	users, totalRecords, err := s.orderService.FindByTrashed(&reqService)
+	orders, totalRecords, err := s.orderService.FindByTrashed(ctx, &reqService)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
 	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
@@ -439,9 +629,29 @@ func (s *orderHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindAll
 		TotalRecords: int32(*totalRecords),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationOrderDeleteAt(paginationMeta, "success", "Successfully fetched trashed order", users)
+	var orderResponses []*pb.OrderResponseDeleteAt
+	for _, order := range orders {
+		var deletedAt string
+		if order.DeletedAt.Valid {
+			deletedAt = order.DeletedAt.Time.Format("2006-01-02")
+		}
+		orderResponses = append(orderResponses, &pb.OrderResponseDeleteAt{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: deletedAt},
+		})
+	}
 
-	return so, nil
+	return &pb.ApiResponsePaginationOrderDeleteAt{
+		Status:     "success",
+		Message:    "Successfully fetched trashed order",
+		Data:       orderResponses,
+		Pagination: paginationMeta,
+	}, nil
 }
 
 func (s *orderHandleGrpc) Create(ctx context.Context, request *pb.CreateOrderRequest) (*pb.ApiResponseOrder, error) {
@@ -461,14 +671,24 @@ func (s *orderHandleGrpc) Create(ctx context.Context, request *pb.CreateOrderReq
 		return nil, order_errors.ErrGrpcValidateCreateOrder
 	}
 
-	order, err := s.orderService.CreateOrder(req)
+	order, err := s.orderService.CreateOrder(ctx, req)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrder("success", "Successfully created order", order)
-	return so, nil
+	return &pb.ApiResponseOrder{
+		Status:  "success",
+		Message: "Successfully created order",
+		Data: &pb.OrderResponse{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+		},
+	}, nil
 }
 
 func (s *orderHandleGrpc) Update(ctx context.Context, request *pb.UpdateOrderRequest) (*pb.ApiResponseOrder, error) {
@@ -494,13 +714,23 @@ func (s *orderHandleGrpc) Update(ctx context.Context, request *pb.UpdateOrderReq
 		return nil, order_errors.ErrGrpcValidateUpdateOrder
 	}
 
-	order, err := s.orderService.UpdateOrder(req)
+	order, err := s.orderService.UpdateOrder(ctx, req)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrder("success", "Successfully updated order", order)
-	return so, nil
+	return &pb.ApiResponseOrder{
+		Status:  "success",
+		Message: "Successfully updated order",
+		Data: &pb.OrderResponse{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+		},
+	}, nil
 }
 
 func (s *orderHandleGrpc) TrashedOrder(ctx context.Context, request *pb.FindByIdOrderRequest) (*pb.ApiResponseOrderDeleteAt, error) {
@@ -510,15 +740,25 @@ func (s *orderHandleGrpc) TrashedOrder(ctx context.Context, request *pb.FindById
 		return nil, order_errors.ErrGrpcFailedInvalidId
 	}
 
-	merchant, err := s.orderService.TrashedOrder(id)
+	order, err := s.orderService.TrashedOrder(ctx, id)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrderDeleteAt("success", "Successfully trashed order", merchant)
-
-	return so, nil
+	return &pb.ApiResponseOrderDeleteAt{
+		Status:  "success",
+		Message: "Successfully trashed order",
+		Data: &pb.OrderResponseDeleteAt{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: order.DeletedAt.Time.String()},
+		},
+	}, nil
 }
 
 func (s *orderHandleGrpc) RestoreOrder(ctx context.Context, request *pb.FindByIdOrderRequest) (*pb.ApiResponseOrderDeleteAt, error) {
@@ -528,15 +768,25 @@ func (s *orderHandleGrpc) RestoreOrder(ctx context.Context, request *pb.FindById
 		return nil, order_errors.ErrGrpcFailedInvalidId
 	}
 
-	merchant, err := s.orderService.RestoreOrder(id)
+	order, err := s.orderService.RestoreOrder(ctx, id)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrderDeleteAt("success", "Successfully restored order", merchant)
-
-	return so, nil
+	return &pb.ApiResponseOrderDeleteAt{
+		Status:  "success",
+		Message: "Successfully restored order",
+		Data: &pb.OrderResponseDeleteAt{
+			Id:         int32(order.OrderID),
+			MerchantId: int32(order.MerchantID),
+			CashierId:  int32(order.CashierID),
+			TotalPrice: int32(order.TotalPrice),
+			CreatedAt:  order.CreatedAt.Time.String(),
+			UpdatedAt:  order.UpdatedAt.Time.String(),
+			DeletedAt:  &wrapperspb.StringValue{Value: order.DeletedAt.Time.String()},
+		},
+	}, nil
 }
 
 func (s *orderHandleGrpc) DeleteOrderPermanent(ctx context.Context, request *pb.FindByIdOrderRequest) (*pb.ApiResponseOrderDelete, error) {
@@ -546,37 +796,40 @@ func (s *orderHandleGrpc) DeleteOrderPermanent(ctx context.Context, request *pb.
 		return nil, order_errors.ErrGrpcFailedInvalidId
 	}
 
-	_, err := s.orderService.DeleteOrderPermanent(id)
+	_, err := s.orderService.DeleteOrderPermanent(ctx, id)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrderDelete("success", "Successfully deleted order permanently")
-
-	return so, nil
+	return &pb.ApiResponseOrderDelete{
+		Status:  "success",
+		Message: "Successfully deleted order permanently",
+	}, nil
 }
 
 func (s *orderHandleGrpc) RestoreAllOrder(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseOrderAll, error) {
-	_, err := s.orderService.RestoreAllOrder()
+	_, err := s.orderService.RestoreAllOrder(ctx)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrderAll("success", "Successfully restore all order")
-
-	return so, nil
+	return &pb.ApiResponseOrderAll{
+		Status:  "success",
+		Message: "Successfully restore all order",
+	}, nil
 }
 
 func (s *orderHandleGrpc) DeleteAllOrderPermanent(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseOrderAll, error) {
-	_, err := s.orderService.DeleteAllOrderPermanent()
+	_, err := s.orderService.DeleteAllOrderPermanent(ctx)
 
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseOrderAll("success", "Successfully delete order permanen")
-
-	return so, nil
+	return &pb.ApiResponseOrderAll{
+		Status:  "success",
+		Message: "Successfully delete order permanen",
+	}, nil
 }

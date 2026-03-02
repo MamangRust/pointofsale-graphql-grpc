@@ -2,27 +2,29 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/MamangRust/pointofsale-graphql-grpc/internal/app"
 	"go.uber.org/zap"
 )
 
 func main() {
-	client, err := app.NewClient()
+	client, err := app.NewClient(&app.ClientConfig{
+		ServiceName:    "client",
+		ServiceVersion: "1.0.0",
+		Environment:    "production",
+		OtelEndpoint:   "otel-collector:4317",
+		GRPCAddr:       "server:50051",
+		ServerPort:     "5000",
+		AllowedOrigins: []string{"http://localhost:1420", "http://localhost:33451", "http://localhost:5173"},
+	})
 	if err != nil {
-		client.Logger.Error("Failed to initialize Client",
-			zap.String("stage", "initialization"),
-			zap.Error(err),
-		)
-		panic(fmt.Sprintf("❌ Client initialization failed: %v", err))
+		fmt.Fprintf(os.Stderr, "Failed to create client: %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := client.Run(); err != nil {
-		client.Logger.Fatal("Client stopped unexpectedly",
-			zap.String("stage", "runtime"),
-			zap.Error(err),
-		)
+		client.Logger.Error("Client run failed", zap.Error(err))
+		os.Exit(1)
 	}
-
-	client.Logger.Info("🛑 Client gracefully stopped")
 }

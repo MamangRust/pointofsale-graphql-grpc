@@ -1,18 +1,25 @@
 -- GetCashiers: Retrieves paginated list of active cashiers with search capability
 -- Purpose: List all active cashiers for management UI
 -- Parameters:
---   $1: search_term - Optional text to filter cashiers by name or name (NULL for no filter)
+--   $1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
 --   $2: limit - Maximum number of records to return
 --   $3: offset - Number of records to skip for pagination
 -- Returns:
 --   All cashier fields plus total_count of matching records
 -- Business Logic:
 --   - Excludes soft-deleted cashiers (deleted_at IS NULL)
---   - Supports partial text matching on name and name fields (case-insensitive)
+--   - Supports partial text matching on name and username fields (case-insensitive)
 --   - Returns newest cashiers first (created_at DESC)
 --   - Provides total_count for pagination calculations
 -- name: GetCashiers :many
-SELECT *, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     deleted_at IS NULL
@@ -29,18 +36,26 @@ OFFSET
 -- GetCashiersActive: Retrieves paginated list of active cashiers with search capability
 -- Purpose: List all active cashiers for management UI
 -- Parameters:
---   $1: search_term - Optional text to filter cashiers by name or name (NULL for no filter)
+--   $1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
 --   $2: limit - Maximum number of records to return
 --   $3: offset - Number of records to skip for pagination
 -- Returns:
 --   All cashier fields plus total_count of matching records
 -- Business Logic:
 --   - Excludes soft-deleted cashiers (deleted_at IS NULL)
---   - Supports partial text matching on name and name fields (case-insensitive)
+--   - Supports partial text matching on name and username fields (case-insensitive)
 --   - Returns newest cashiers first (created_at DESC)
 --   - Provides total_count for pagination calculations
 -- name: GetCashiersActive :many
-SELECT *, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     deleted_at IS NULL
@@ -57,18 +72,26 @@ OFFSET
 -- GetCashiersTrashed: Retrieves paginated list of soft-deleted cashiers with search capability
 -- Purpose: List all trashed (soft-deleted) cashiers for recovery or audit purposes
 -- Parameters:
---   $1: search_term - Optional text to filter cashiers by name or name (NULL for no filter)
+--   $1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
 --   $2: limit - Maximum number of records to return
 --   $3: offset - Number of records to skip for pagination
 -- Returns:
 --   All cashier fields plus total_count of matching records
 -- Business Logic:
 --   - Includes only soft-deleted cashiers (deleted_at IS NOT NULL)
---   - Supports partial text matching on name and name fields (case-insensitive)
+--   - Supports partial text matching on name and username fields (case-insensitive)
 --   - Returns newest deleted cashiers first (created_at DESC)
 --   - Provides total_count for pagination calculations
 -- name: GetCashiersTrashed :many
-SELECT *, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     deleted_at IS NOT NULL
@@ -91,7 +114,15 @@ OFFSET
 -- Returns:
 --   Cashier records belonging to specified merchant with total_count
 -- name: GetCashiersByMerchant :many
-SELECT *, COUNT(*) OVER () AS total_count
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at,
+    COUNT(*) OVER () AS total_count
 FROM cashiers
 WHERE
     merchant_id = $1
@@ -862,7 +893,12 @@ INSERT INTO
     cashiers (merchant_id, user_id, name)
 VALUES ($1, $2, $3)
 RETURNING
-    *;
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at;
 
 -- GetCashierByID: Retrieves active cashier by ID
 -- Purpose: Fetch cashier details for display/editing
@@ -873,7 +909,13 @@ RETURNING
 --   - Excludes soft-deleted records
 --   - Returns single record or nothing
 -- name: GetCashierById :one
-SELECT *
+SELECT
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at
 FROM cashiers
 WHERE
     cashier_id = $1
@@ -898,7 +940,12 @@ WHERE
     cashier_id = $1
     AND deleted_at IS NULL
 RETURNING
-    *;
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at;
 
 -- TrashCashier: Soft-deletes a cashier record
 -- Purpose: Remove cashier from active use without permanent deletion
@@ -917,7 +964,13 @@ WHERE
     cashier_id = $1
     AND deleted_at IS NULL
 RETURNING
-    *;
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at;
 
 -- RestoreCashier: Recovers a soft-deleted cashier
 -- Purpose: Reactivate a previously trashed cashier
@@ -936,7 +989,13 @@ WHERE
     cashier_id = $1
     AND deleted_at IS NOT NULL
 RETURNING
-    *;
+    cashier_id,
+    merchant_id,
+    user_id,
+    name,
+    created_at,
+    updated_at,
+    deleted_at;
 
 -- DeleteCashierPermanently: Hard-deletes a cashier
 -- Purpose: Completely remove cashier from database
